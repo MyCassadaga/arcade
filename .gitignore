@@ -1,0 +1,14 @@
+node_modules/
+dist/
+!apps/web/dist/
+apps/web/dist/*
+!apps/web/dist/.gitkeep
+coverage/
+playwright-report/
+test-results/
+.wrangler/
+.DS_Store
+*.tsbuildinfo
+.env
+.env.*
+!.env.example

@@ -1,0 +1,15 @@
+{
+  "name": "@team-arcade/games",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./who-said-that": "./src/who-said-that/index.ts",
+    "./impostor": "./src/impostor/index.ts"
+  },
+  "dependencies": {
+    "@team-arcade/game-core": "0.1.0",
+    "@team-arcade/shared": "0.1.0"
+  }
+}

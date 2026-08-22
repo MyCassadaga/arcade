@@ -1,0 +1,16 @@
+{
+  "name": "@team-arcade/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@team-arcade/game-core": "0.1.0",
+    "@team-arcade/games": "0.1.0",
+    "@team-arcade/shared": "0.1.0",
+    "zod": "4.4.3"
+  }
+}
