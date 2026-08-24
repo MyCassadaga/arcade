@@ -34,11 +34,7 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
 
   if (game.gameId === "system-crawl") {
     return (
-      <section className="game-stage system-crawl" aria-live="polite">
-        <div className="phase-topline">
-          <span>System Crawl</span>
-          <span>{game.phase.replaceAll("_", " ")}</span>
-        </div>
+      <section className="game-stage system-crawl">
         <SystemCrawlScreen
           view={game.public as SystemCrawlViewerState}
           players={room.players}

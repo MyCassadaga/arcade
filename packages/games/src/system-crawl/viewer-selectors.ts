@@ -1,6 +1,7 @@
 import { isCardinallyAdjacent } from "./pathfinding";
 import {
   getReachableMovementTiles,
+  getCanonicalMovePath,
   getValidAbilityTargets,
   getValidItemTargets
 } from "./selectors";
@@ -18,6 +19,14 @@ export function getViewerReachableMovementTiles(
   characterId: string
 ): Position[] {
   return getReachableMovementTiles(hydrateViewerState(view), characterId);
+}
+
+export function getViewerCanonicalMovePath(
+  view: SystemCrawlViewerState,
+  characterId: string,
+  destination: Position
+): Position[] | null {
+  return getCanonicalMovePath(hydrateViewerState(view), characterId, destination);
 }
 
 export function getViewerValidAbilityTargets(
