@@ -66,7 +66,11 @@ export const SYSTEM_CRAWL_ITEM_IDS = [
   "budget-exception",
   "vendor-documentation",
   "ethernet-cable",
-  "noise-canceling-headphones"
+  "noise-canceling-headphones",
+  "stack-overflow-answer",
+  "maintenance-window",
+  "known-good-backup",
+  "rubber-duck-debugging"
 ] as const;
 
 const systemCrawlEntityIdSchema = z.string().trim().min(1).max(100);
@@ -83,6 +87,7 @@ const systemCrawlTargetSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("enemy"), enemyId: systemCrawlEntityIdSchema }).strict(),
   z.object({ type: z.literal("door"), doorId: systemCrawlEntityIdSchema }).strict(),
   z.object({ type: z.literal("position"), position: systemCrawlPositionSchema }).strict(),
+  z.object({ type: z.literal("ability"), abilityId: z.enum(SYSTEM_CRAWL_ABILITY_IDS) }).strict(),
   z
     .object({
       type: z.literal("load_balancer"),
@@ -100,6 +105,7 @@ export const systemCrawlCommandSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("start_adventure") }).strict(),
+  z.object({ type: z.literal("continue_briefing") }).strict(),
   z
     .object({
       type: z.literal("move_to"),
@@ -164,7 +170,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("host.startGame"),
     requestId: requestIdSchema,
-    payload: z.object({}).strict()
+    payload: z.object({ replayMode: z.enum(["new", "same"]).optional() }).strict()
   }).strict(),
   z.object({
     type: z.literal("host.advance"),
@@ -280,7 +286,7 @@ export type ImpostorPrivateView =
 export type TypedGameViewerState =
   | { gameId: "who-said-that"; phase: "submitting" | "guessing" | "reveal" | "roundResults" | "gameResults"; public: WhoSaidThatPublicView; private: WhoSaidThatPrivateView }
   | { gameId: "impostor"; phase: "roleReveal" | "clueSubmission" | "clueReveal" | "discussion" | "voting" | "voteReveal" | "impostorGuess" | "roundResults" | "gameResults"; public: ImpostorPublicView; private: ImpostorPrivateView }
-  | { gameId: "system-crawl"; phase: "class_selection" | "ready_to_start" | "player_turn" | "resolving_choice" | "enemy_phase" | "victory" | "defeat"; public: unknown; private?: unknown };
+  | { gameId: "system-crawl"; phase: "class_selection" | "ready_to_start" | "incident_briefing" | "player_turn" | "resolving_choice" | "enemy_phase" | "victory" | "defeat"; public: unknown; private?: unknown };
 
 export type ErrorCode =
   | "ROOM_NOT_FOUND"

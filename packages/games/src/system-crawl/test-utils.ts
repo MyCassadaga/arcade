@@ -30,7 +30,8 @@ export function startedState(count = 4, seed: string | number = "system-crawl-te
       state = reduceSystemCrawl(state, { type: "select_class", classIds: [TEST_CLASS_IDS[index] as SystemCrawlClassId] }, player.id).state;
     });
   }
-  return reduceSystemCrawl(state, { type: "start_adventure", seed }, players[0]?.id ?? "").state;
+  state = reduceSystemCrawl(state, { type: "start_adventure", seed }, players[0]?.id ?? "").state;
+  return reduceSystemCrawl(state, { type: "continue_briefing" }, players[0]?.id ?? "").state;
 }
 
 export function cloneState(state: SystemCrawlState): SystemCrawlState {
@@ -54,6 +55,7 @@ export function activateClass(state: SystemCrawlState, classId: SystemCrawlClass
     movementSpent: 0,
     actionUsed: false,
     actionBlocked: false,
+    freeItemUsed: false,
     actedCharacterIdsThisRound: []
   };
   return next;
@@ -83,7 +85,10 @@ export function replaceEnemies(
       revealedRound: next.round,
       statuses: { movementReductionNextActivation: 0, stunnedNextActivation: false, tauntedByCharacterId: null },
       backwardCompatibilityUsedThisRound: false,
-      undocumentedDependencyTriggered: false
+      undocumentedDependencyTriggered: false,
+      halfHealthTriggered: false,
+      defeatSpawnTriggered: false,
+      specialUsedRound: null
     };
     next.enemies[id] = enemy;
   });

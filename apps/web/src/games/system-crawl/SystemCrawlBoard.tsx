@@ -253,6 +253,7 @@ function IsometricTile({ position, map, view, movementKeys, targetsByPosition, c
   const door = map.doors?.find((candidate) => positionKey(candidate.position) === key);
   const cache = map.caches?.find((candidate) => !candidate.pickedUp && positionKey(candidate.position) === key);
   const prop = map.props?.find((candidate) => candidate.position.x === position.x && candidate.position.y === position.y);
+  const hazard = view.hazards.find((candidate) => positionKey(candidate.position) === key);
   const exit = map.exit?.x === position.x && map.exit.y === position.y;
   const entrance = map.entrance?.x === position.x && map.entrance.y === position.y;
   const actionable = movement || targeted;
@@ -267,6 +268,7 @@ function IsometricTile({ position, map, view, movementKeys, targetsByPosition, c
     door ? (door.open ? "open firewall gate" : "locked firewall gate") : "",
     cache ? "item cache" : "",
     prop?.kind ?? "",
+    hazard ? "temporary corruption hazard" : "",
     exit ? "network uplink" : "",
     entrance ? "network entrance" : "",
     current ? "current character tile" : "",
@@ -324,6 +326,7 @@ function TileContents({ position, map, view, frontier, movingCharacterIds, movin
   const door = map.doors?.find((candidate) => positionKey(candidate.position) === key);
   const cache = map.caches?.find((candidate) => !candidate.pickedUp && positionKey(candidate.position) === key);
   const prop = map.props?.find((candidate) => candidate.position.x === position.x && candidate.position.y === position.y);
+  const hazard = view.hazards.find((candidate) => positionKey(candidate.position) === key);
   const exit = map.exit?.x === position.x && map.exit.y === position.y;
   const entrance = map.entrance?.x === position.x && map.entrance.y === position.y;
   return <g className="sc-tile-contents">
@@ -332,6 +335,7 @@ function TileContents({ position, map, view, frontier, movingCharacterIds, movin
     {door && <g transform={`translate(${point.x} ${point.y - 8})`}><DoorSprite open={door.open} /></g>}
     {prop && <g transform={`translate(${point.x} ${point.y - 8})`}><PropSprite kind={prop.kind} /></g>}
     {cache && <g transform={`translate(${point.x} ${point.y - 8})`}><CacheSprite /></g>}
+    {hazard && <g className="sc-corruption-hazard" role="img" aria-label={`Corruption hazard, expires after round ${hazard.expiresAfterRound}`}><circle cx={point.x} cy={point.y - 3} r="11" /><path d={`M${point.x - 8} ${point.y - 3}h16M${point.x} ${point.y - 11}v16`} /></g>}
     {enemies.map((enemy, index) => <g key={enemy.id} transform={`translate(${point.x - 16 + index * 12} ${point.y - 42}) scale(${enemy.definitionId === "legacy-system" ? 1.18 : 0.82})`}>
       <EnemySprite definitionId={enemy.definitionId} displayName={enemy.displayName} damaged={damagedIds.has(enemy.id)} acting={movingEnemyIds.has(enemy.id) || actingEnemyIds.has(enemy.id)} />
       <HealthPip x={16} y={37} value={enemy.hp} max={enemy.maxHp} hostile />
@@ -384,7 +388,7 @@ function targetsAtPositions(view: SystemCrawlViewerState, interaction: BoardInte
     else if (target.type === "load_balancer") position = target.destination;
     else if (target.type === "character") position = view.characters[target.characterId]?.position;
     else if (target.type === "enemy") position = view.enemies[target.enemyId]?.position;
-    else position = view.maps.flatMap((map) => map.doors ?? []).find((door) => door.id === target.doorId)?.position;
+    else if (target.type === "door") position = view.maps.flatMap((map) => map.doors ?? []).find((door) => door.id === target.doorId)?.position;
     if (!position) continue;
     const key = positionKey(position);
     result.set(key, [...(result.get(key) ?? []), target]);

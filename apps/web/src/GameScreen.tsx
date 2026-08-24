@@ -30,6 +30,7 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
   });
   const hostAdvance = () => send({ type: "host.advance", requestId: crypto.randomUUID(), payload: {} });
   const playAgain = () => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
+  const systemCrawlReplay = (replayMode: "new" | "same") => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: { replayMode } });
   const backToArcade = () => send({ type: "host.backToArcade", requestId: crypto.randomUUID(), payload: {} });
 
   if (game.gameId === "system-crawl") {
@@ -43,7 +44,8 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
           status={status}
           commandPending={commandPending}
           sendGame={sendGame}
-          playAgain={playAgain}
+          playAgainNewSeed={() => systemCrawlReplay("new")}
+          replaySameSeed={() => systemCrawlReplay("same")}
           backToArcade={backToArcade}
         />
       </section>

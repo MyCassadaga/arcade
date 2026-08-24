@@ -24,6 +24,26 @@ export function createSystemCrawlRoomState(players: readonly StoredPlayer[]): Sy
   );
 }
 
+export function createSystemCrawlReplayRoomState(
+  players: readonly StoredPlayer[],
+  previous: SystemCrawlState,
+  seed: string
+): SystemCrawlState {
+  let next = createSystemCrawlRoomState(players);
+  for (const player of next.players) {
+    const classIds = previous.classSelections[player.id];
+    if (!classIds) continue;
+    try {
+      next = reduceSystemCrawl(next, { type: "select_class", classIds }, player.id).state;
+    } catch {
+      return createSystemCrawlRoomState(players);
+    }
+  }
+  if (next.phase !== "ready_to_start") return next;
+  next = reduceSystemCrawl(next, { type: "start_adventure", seed }, next.hostPlayerId).state;
+  return reduceSystemCrawl(next, { type: "continue_briefing" }, next.hostPlayerId).state;
+}
+
 export function handleSystemCrawlRoomCommand(
   state: SystemCrawlState,
   command: SystemCrawlCommand,

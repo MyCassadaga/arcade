@@ -110,7 +110,7 @@ describe("final System Crawl interface", () => {
     state.pendingChoice = { kind: "google_it", id: "choice:test", ownerPlayerId: "host", characterId: generalist.id, candidateItemIds: ["coffee", "admin-credentials"] };
     const { unmount } = renderScreen(projectSystemCrawlState(state, "host"), [hostPlayer, guestPlayer]);
     expect(screen.getByRole("button", { name: /Coffee/ })).toHaveTextContent("Restore 3 HP");
-    expect(screen.getByRole("button", { name: /Admin Credentials/ })).toHaveTextContent("Rare");
+    expect(screen.getByRole("button", { name: /Admin Credentials/ })).toHaveTextContent("Uncommon");
     unmount();
     renderScreen(projectSystemCrawlState(state, "guest"), [hostPlayer, guestPlayer], undefined, { selfId: "guest", isHost: false });
     expect(screen.queryByText("Admin Credentials")).not.toBeInTheDocument();
@@ -134,7 +134,8 @@ describe("final System Crawl interface", () => {
       const result = structuredClone(gameplay); result.phase = phase; result.activeCharacterId = null; result.turn = null;
       rerender(screenElement(projectSystemCrawlState(result, "host"), [hostPlayer]));
       expect(screen.getByRole("heading", { name: phase === "victory" ? "Production stabilized" : "Incident unresolved" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Provision another run" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Play Again With New Seed" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Replay Same Seed" })).toBeInTheDocument();
     }
   });
 
@@ -165,23 +166,57 @@ describe("final System Crawl interface", () => {
     await waitFor(() => expect(screen.getAllByText("3 health restored.").length).toBeGreaterThan(0));
     expect(container.querySelector(".sc-event-effects > *")).toBeNull();
   });
+
+  it("shows an accessible first-time tutorial and keeps Rules permanently available", async () => {
+    window.localStorage.removeItem("team-arcade:system-crawl:tutorial-dismissed");
+    const user = userEvent.setup();
+    const setup = createSystemCrawlState([{ id: "host", displayName: "Host" }], "host");
+    const first = renderScreen(projectSystemCrawlState(setup, "host"), [hostPlayer]);
+    expect(screen.getByRole("dialog", { name: "System Crawl rules" })).toBeInTheDocument();
+    expect(first.container.querySelectorAll("#sc-tutorial-title + ol > li")).toHaveLength(8);
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(window.localStorage.getItem("team-arcade:system-crawl:tutorial-dismissed")).toBe("1");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Rules & tutorial" }));
+    expect(screen.getByRole("dialog", { name: "System Crawl rules" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps sound muted by default and only creates audio after a user gesture", async () => {
+    window.localStorage.removeItem("team-arcade:system-crawl:sound-enabled");
+    const resume = vi.fn(() => Promise.resolve());
+    const AudioContextStub = vi.fn(function AudioContextStub(this: { resume: typeof resume }) { this.resume = resume; });
+    vi.stubGlobal("AudioContext", AudioContextStub);
+    const user = userEvent.setup();
+    renderScreen(projectSystemCrawlState(soloGameplay(), "host"), [hostPlayer]);
+    const toggle = screen.getByRole("button", { name: "Sound muted" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(AudioContextStub).not.toHaveBeenCalled();
+    await user.click(toggle);
+    expect(AudioContextStub).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("team-arcade:system-crawl:sound-enabled")).toBe("1");
+  });
 });
 
 function soloGameplay(classes: ["application-developer", "infrastructure-architect"] | ["infrastructure-architect", "application-developer"] = ["infrastructure-architect", "application-developer"]): SystemCrawlState {
   let state = createSystemCrawlState([{ id: "host", displayName: "Host" }], "host");
   state = reduceSystemCrawl(state, { type: "select_class", classIds: classes }, "host").state;
-  return reduceSystemCrawl(state, { type: "start_adventure", seed: "ui-test" }, "host").state;
+  state = reduceSystemCrawl(state, { type: "start_adventure", seed: "ui-test" }, "host").state;
+  return reduceSystemCrawl(state, { type: "continue_briefing" }, "host").state;
 }
 
 function twoPlayerGameplay(): SystemCrawlState {
   let state = createSystemCrawlState([{ id: "host", displayName: "Host" }, { id: "guest", displayName: "Guest" }], "host");
   state = reduceSystemCrawl(state, { type: "select_class", classIds: ["it-generalist"] }, "host").state;
   state = reduceSystemCrawl(state, { type: "select_class", classIds: ["infrastructure-architect"] }, "guest").state;
-  return reduceSystemCrawl(state, { type: "start_adventure", seed: "privacy-test" }, "host").state;
+  state = reduceSystemCrawl(state, { type: "start_adventure", seed: "privacy-test" }, "host").state;
+  return reduceSystemCrawl(state, { type: "continue_briefing" }, "host").state;
 }
 
 function pushEvent(state: SystemCrawlState, type: SystemCrawlEvent["type"], data: SystemCrawlEvent["data"]) { state.events.push({ id: state.nextEventId++, round: state.round, type, data }); }
 function renderScreen(view: SystemCrawlViewerState, players: PlayerView[], sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; }), overrides: Partial<ScreenOptions> = {}) { return render(screenElement(view, players, sendGame, overrides)); }
 interface ScreenOptions { selfId: string; isHost: boolean; commandPending: boolean; status: "connecting" | "connected" | "reconnecting" | "offline" | "error"; }
-function screenElement(view: SystemCrawlViewerState, players: PlayerView[], sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; }), overrides: Partial<ScreenOptions> = {}) { return <SystemCrawlScreen view={view} players={players} selfId={overrides.selfId ?? "host"} isHost={overrides.isHost ?? true} status={overrides.status ?? "connected"} commandPending={overrides.commandPending ?? false} sendGame={sendGame} playAgain={() => true} backToArcade={() => true} />; }
+function screenElement(view: SystemCrawlViewerState, players: PlayerView[], sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; }), overrides: Partial<ScreenOptions> = {}) { return <SystemCrawlScreen view={view} players={players} selfId={overrides.selfId ?? "host"} isHost={overrides.isHost ?? true} status={overrides.status ?? "connected"} commandPending={overrides.commandPending ?? false} sendGame={sendGame} playAgainNewSeed={() => true} replaySameSeed={() => true} backToArcade={() => true} />; }
 function player(id: string, displayName: string, isHost: boolean): PlayerView { return { id, displayName, isHost, connected: true, score: 0 }; }

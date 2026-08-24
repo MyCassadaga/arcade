@@ -41,7 +41,7 @@ export function AbilityPanel({ view, character, ownsCurrent, commandReady, selec
     <div className="sc-ability-list">{definition.abilityIds.map((abilityId) => {
       const ability = ABILITY_DEFINITIONS[abilityId];
       const targets = getViewerValidAbilityTargets(view, character.id, abilityId);
-      const repeated = character.lastActionKey === `ability:${abilityId}`;
+      const repeated = character.lastActionKey === `ability:${abilityId}` && character.statuses.repeatOverrideAbilityId !== abilityId;
       const reason = unavailableReason({ view, character, ownsCurrent, commandReady, repeated, targets, abilityId });
       const active = selection?.kind === "ability" && selection.abilityId === abilityId;
       return <button key={abilityId} type="button" className={active ? "is-selected" : ""} aria-pressed={active} disabled={Boolean(reason)} onClick={() => onSelection({ kind: "ability", abilityId, label: ability.displayName, targets })}>
@@ -78,15 +78,17 @@ function ItemControl({ character, view, canSpendAction, selection, onSelection, 
   const copy = ITEM_PRESENTATION[itemId];
   const targets = getViewerValidItemTargets(view, character.id);
   const passive = item.effect === "passive";
+  const free = item.effect === "free";
   const repeated = character.lastActionKey === `item:${itemId}`;
   const selected = selection?.kind === "item";
   return <article className={`sc-item-card rarity-${copy.rarity.toLowerCase()}`}>
     <header><span>◈ {copy.rarity}</span><strong>{item.displayName}</strong><small>{copy.timing}</small></header>
     <p>{copy.description}</p>
     <div>
-      {!passive && <button type="button" aria-pressed={selected} disabled={!canSpendAction || repeated || targets.length === 0} onClick={() => onSelection({ kind: "item", label: item.displayName, targets })}>{selected ? "Targeting…" : "Use item"}</button>}
+      {!passive && itemId === "stack-overflow-answer" ? targets.map((target) => target.type === "ability" ? <button key={target.abilityId} type="button" disabled={!canSpendAction || view.turn?.freeItemUsed} onClick={() => sendGame({ type: "use_item", characterId: character.id, target })}>Unlock {ABILITY_DEFINITIONS[target.abilityId].displayName}</button> : null) : null}
+      {!passive && itemId !== "stack-overflow-answer" && <button type="button" aria-pressed={selected} disabled={!canSpendAction || (!free && repeated) || targets.length === 0} onClick={() => onSelection({ kind: "item", label: item.displayName, targets })}>{selected ? "Targeting…" : "Use item"}</button>}
       {passive && <span className="sc-passive-label">PASSIVE / AUTOMATIC</span>}
-      {!confirmDiscard ? <button type="button" className="sc-discard" disabled={!canSpendAction} onClick={() => copy.rarity === "Rare" ? setConfirmDiscard(true) : sendGame({ type: "discard_item", characterId: character.id })}>Discard</button> : <span className="sc-discard-confirm" role="group" aria-label={`Confirm discard ${item.displayName}`}><b>Discard rare item?</b><button type="button" onClick={() => sendGame({ type: "discard_item", characterId: character.id })}>Confirm</button><button type="button" onClick={() => setConfirmDiscard(false)}>Keep</button></span>}
+      {!confirmDiscard ? <button type="button" className="sc-discard" disabled={!canSpendAction} onClick={() => copy.rarity === "Rare" || copy.rarity === "Legendary" ? setConfirmDiscard(true) : sendGame({ type: "discard_item", characterId: character.id })}>Discard</button> : <span className="sc-discard-confirm" role="group" aria-label={`Confirm discard ${item.displayName}`}><b>Discard valuable item?</b><button type="button" onClick={() => sendGame({ type: "discard_item", characterId: character.id })}>Confirm</button><button type="button" onClick={() => setConfirmDiscard(false)}>Keep</button></span>}
     </div>
     {repeated && <em>Used last turn — choose another action or end the turn without acting to Reboot.</em>}
   </article>;
@@ -106,6 +108,7 @@ function unavailableReason({ view, character, ownsCurrent, commandReady, repeate
   if (character.downed) return "Character is downed";
   if (view.turn?.actionBlocked) return "Action blocked by negative status";
   if (view.turn?.actionUsed) return "Action already spent";
+  if (character.statuses.lockedAbilityId === abilityId) return "Temporarily locked by Strategic Realignment";
   if (repeated) return "Used last turn — Reboot or choose another action";
   if (abilityId === "google-it" && character.carriedItemId) return "Required item slot condition — discard the carried item first";
   if (targets.length === 0) return "No valid target";

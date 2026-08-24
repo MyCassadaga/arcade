@@ -40,6 +40,8 @@ describe("System Crawl movement, caches, and turn rules", () => {
     const character = characterByClass(state, "infrastructure-architect");
     const template = SYSTEM_CRAWL_MAPS_BY_ID[state.maps[0]?.templateId ?? ""];
     expect(template).toBeDefined();
+    const configuredDoor = state.maps[0]?.doors[0];
+    if (configuredDoor) configuredDoor.open = false;
     const targets = [
       { cardIndex: 0, x: 0, y: 0 },
       { cardIndex: 0, ...(template?.props[0]?.position ?? { x: 0, y: 0 }) },
@@ -128,7 +130,7 @@ describe("System Crawl movement, caches, and turn rules", () => {
       abilityId: "packet-drop",
       target: { type: "enemy", enemyId: enemy.id }
     }, character.ownerPlayerId).state;
-    state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, actedCharacterIdsThisRound: [] };
+    state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, freeItemUsed: false, actedCharacterIdsThisRound: [] };
     expect(() => reduceSystemCrawl(state, {
       type: "use_ability",
       characterId: character.id,

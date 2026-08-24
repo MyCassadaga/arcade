@@ -31,6 +31,7 @@ describe("System Crawl initial items", () => {
     const door = fixture.state.maps[0]?.doors[0];
     if (!door) throw new Error("Entry map needs a door");
     door.position = { cardIndex: 0, x: 3, y: 3 };
+    door.open = false;
     expect(() => useFixtureItem(fixture.state, fixture.character.id, fixture.character.ownerPlayerId, {
       type: "door", doorId: "missing"
     })).toThrow(expect.objectContaining({ code: "invalid_target" }));

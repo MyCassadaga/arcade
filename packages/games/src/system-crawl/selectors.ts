@@ -46,6 +46,7 @@ export function getValidAbilityTargets(
   if (!character || character.downed) return [];
   const definition = ABILITY_DEFINITIONS[abilityId];
   if (!CLASS_DEFINITIONS[character.classId].abilityIds.includes(abilityId)) return [];
+  if (character.statuses.lockedAbilityId === abilityId) return [];
 
   if (abilityId === "google-it") {
     return character.carriedItemId === null ? [{ type: "character", characterId }] : [];
@@ -126,6 +127,20 @@ function targetsForItem(state: SystemCrawlState, character: SystemCrawlCharacter
   if (itemId === "budget-exception") return [{ type: "character", characterId: character.id }];
   if (itemId === "vendor-documentation") {
     return state.revealedCardCount < state.maps.length ? [{ type: "character", characterId: character.id }] : [];
+  }
+  if (itemId === "stack-overflow-answer") {
+    const abilityId = character.lastActionKey?.startsWith("ability:")
+      ? character.lastActionKey.slice("ability:".length) as SystemCrawlAbilityId
+      : null;
+    return abilityId && CLASS_DEFINITIONS[character.classId].abilityIds.includes(abilityId)
+      ? [{ type: "ability", abilityId }]
+      : [];
+  }
+  if (itemId === "maintenance-window") return [{ type: "character", characterId: character.id }];
+  if (itemId === "rubber-duck-debugging") {
+    return Object.values(state.characters)
+      .filter((ally) => !ally.downed && manhattanDistance(character.position, ally.position) <= 2 && hasLineOfSight(state, character.position, ally.position))
+      .map((ally) => ({ type: "character" as const, characterId: ally.id }));
   }
   return [];
 }

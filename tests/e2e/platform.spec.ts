@@ -34,11 +34,18 @@ test("two players synchronize a System Crawl move and ability across desktop and
     await expect(guest.getByRole("button", { name: /System Crawl/ })).toHaveAttribute("aria-pressed", "true");
     await host.getByRole("button", { name: "Start game" }).click();
     await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Assemble the response team" })).toBeVisible()));
+    await Promise.all([host, guest].map(async (page) => {
+      const closeTutorial = page.getByRole("button", { name: "Close" });
+      if (await closeTutorial.isVisible()) await closeTutorial.click();
+    }));
 
     await host.getByRole("button", { name: /Application Developer/ }).click();
     await guest.getByRole("button", { name: /Infrastructure Architect/ }).click();
     await expect(host.getByRole("button", { name: "Initialize adventure" })).toBeVisible();
     await host.getByRole("button", { name: "Initialize adventure" }).click();
+    await expect(host.getByText("INCIDENT TICKET / AWAITING HOST ACKNOWLEDGEMENT")).toBeVisible();
+    await expect(guest.getByText(/Waiting for the host to acknowledge/)).toBeVisible();
+    await host.getByRole("button", { name: "Acknowledge and deploy" }).click();
     await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "System topology" })).toBeVisible()));
 
     await expect(host.locator(".sc-incident-bar dd").nth(1)).toHaveText("Application Developer");
@@ -70,6 +77,28 @@ test("two players synchronize a System Crawl move and ability across desktop and
   } finally {
     await Promise.all([hostContext.close(), guestContext.close()]);
   }
+});
+
+test("solo System Crawl controls two characters through briefing and reconnect", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Display name").fill("Solo Crawler");
+  await page.getByRole("button", { name: "Create game" }).click();
+  await page.getByRole("button", { name: /System Crawl/ }).click();
+  await page.getByRole("button", { name: "Start game" }).click();
+  await expect(page.getByRole("heading", { name: "Assemble the response team" })).toBeVisible();
+  const closeTutorial = page.getByRole("button", { name: "Close" });
+  await expect(closeTutorial).toBeVisible();
+  await closeTutorial.click();
+  await page.getByRole("button", { name: /Infrastructure Architect/ }).click();
+  await page.getByRole("button", { name: /Application Developer/ }).click();
+  await page.getByRole("button", { name: "Save two operators" }).click();
+  await page.getByRole("button", { name: "Initialize adventure" }).click();
+  await expect(page.getByText("INCIDENT TICKET / AWAITING HOST ACKNOWLEDGEMENT")).toBeVisible();
+  await page.getByRole("button", { name: "Acknowledge and deploy" }).click();
+  await expect(page.locator(".sc-owned-characters .sc-character-card")).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "System topology" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".sc-owned-characters .sc-character-card")).toHaveCount(2);
 });
 
 test("seven players complete Who Said That and an Impostor round without losing private state", async ({ browser }) => {

@@ -36,6 +36,7 @@ describe("shared protocol validation", () => {
     expect(GAME_CATALOG.find((game) => game.id === "system-crawl")).toMatchObject({
       name: "System Crawl",
       description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",
+      duration: "15–20 min",
       playerRange: "1–4 players"
     });
   });
@@ -46,11 +47,13 @@ describe("shared protocol validation", () => {
       { type: "select_class", classIds: ["infrastructure-architect"] },
       { type: "select_class", classIds: ["application-developer", "it-generalist"] },
       { type: "start_adventure" },
+      { type: "continue_briefing" },
       { type: "move_to", characterId: "character:1", destination: position },
       { type: "use_ability", characterId: "character:1", abilityId: "hotfix", target: { type: "enemy", enemyId: "enemy:1" } },
       { type: "use_ability", characterId: "character:1", abilityId: "load-balancer", target: { type: "load_balancer", characterId: "character:2", destination: position } },
       { type: "resolve_choice", choiceId: "choice:1", itemId: "coffee" },
       { type: "use_item", characterId: "character:1", target: { type: "door", doorId: "door:1" } },
+      { type: "use_item", characterId: "character:1", target: { type: "ability", abilityId: "hotfix" } },
       { type: "discard_item", characterId: "character:1" },
       { type: "restart_user", characterId: "character:1", targetCharacterId: "character:2" },
       { type: "end_turn", characterId: "character:1" }
@@ -62,6 +65,12 @@ describe("shared protocol validation", () => {
         payload: { command }
       }).success).toBe(true);
     }
+  });
+
+  it("accepts only the documented System Crawl replay modes", () => {
+    expect(clientMessageSchema.safeParse({ type: "host.startGame", requestId: "same", payload: { replayMode: "same" } }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ type: "host.startGame", requestId: "new", payload: { replayMode: "new" } }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ type: "host.startGame", requestId: "bad", payload: { replayMode: "old" } }).success).toBe(false);
   });
 
   it("rejects malformed System Crawl commands and client-supplied randomness", () => {

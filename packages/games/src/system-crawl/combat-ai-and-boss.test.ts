@@ -15,6 +15,9 @@ function keepOnlyLiving(state: ReturnType<typeof startedState>, characterId: str
 
 function revealBossCard() {
   let state = activateClass(startedState(4, "boss-fixture"), "infrastructure-architect");
+  state.incidentId = "erp-modernization";
+  const bossCard = state.maps[3];
+  if (bossCard) bossCard.templateId = "incident-command";
   const character = characterByClass(state, "infrastructure-architect");
   while (state.revealedCardCount < 4) {
     characterByClass(state, "infrastructure-architect").carriedItemId = "vendor-documentation";
@@ -230,6 +233,6 @@ describe("System Crawl combat, enemy AI, and boss", () => {
     }
     expect(state.revealedCardCount).toBe(4);
     expect(state.characters[architect.id]?.position.cardIndex).toBe(3);
-    expect(Object.values(state.enemies).some((enemy) => enemy.definitionId === "legacy-system")).toBe(true);
+    expect(Object.values(state.enemies).some((enemy) => enemy.position.cardIndex === 3 && enemy.hp > 0)).toBe(true);
   });
 });

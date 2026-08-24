@@ -44,8 +44,11 @@ describe("System Crawl room integration", () => {
     });
     await ready;
 
-    const started = waitForSystem(socket, (view) => view.phase === "player_turn");
+    const briefing = waitForSystem(socket, (view) => view.phase === "incident_briefing");
     sendCommand(socket, "solo-adventure", { type: "start_adventure" });
+    await briefing;
+    const started = waitForSystem(socket, (view) => view.phase === "player_turn");
+    sendCommand(socket, "solo-deploy", { type: "continue_briefing" });
     const adventure = await started;
     expect(Object.values(adventure.characters)).toHaveLength(2);
     expect(Object.values(adventure.characters).every((character) => character.ownerPlayerId === host.playerId)).toBe(true);
@@ -88,8 +91,11 @@ describe("System Crawl room integration", () => {
     sendCommand(guestSocket, "guest-start", { type: "start_adventure" });
     await expect(waitForError(guestSocket, "guest-start")).resolves.toMatchObject({ payload: { code: "not_host" } });
 
-    const started = Promise.all(sockets.map((socket) => waitForSystem(socket, (view) => view.phase === "player_turn")));
+    const briefing = waitForSystem(hostSocket, (view) => view.phase === "incident_briefing");
     sendCommand(hostSocket, "host-start", { type: "start_adventure" });
+    await briefing;
+    const started = Promise.all(sockets.map((socket) => waitForSystem(socket, (view) => view.phase === "player_turn")));
+    sendCommand(hostSocket, "host-deploy", { type: "continue_briefing" });
     const [hostView] = await started;
     if (!hostView) throw new Error("Expected host view");
     const hostCharacter = Object.values(hostView.characters).find((character) => character.ownerPlayerId === host.playerId);
@@ -98,18 +104,23 @@ describe("System Crawl room integration", () => {
 
     sendCommand(guestSocket, "steal-host-character", { type: "end_turn", characterId: hostCharacter.id });
     await expect(waitForError(guestSocket, "steal-host-character")).resolves.toMatchObject({ payload: { code: "not_character_owner" } });
-    sendCommand(guestSocket, "guest-out-of-turn", { type: "end_turn", characterId: guestCharacter.id });
-    await expect(waitForError(guestSocket, "guest-out-of-turn")).resolves.toMatchObject({ payload: { code: "not_current_character" } });
+    const outOfTurnCharacter = hostView.activeCharacterId === guestCharacter.id ? hostCharacter : guestCharacter;
+    const outOfTurnSocket = outOfTurnCharacter.ownerPlayerId === host.playerId ? hostSocket : guestSocket;
+    sendCommand(outOfTurnSocket, "owned-out-of-turn", { type: "end_turn", characterId: outOfTurnCharacter.id });
+    await expect(waitForError(outOfTurnSocket, "owned-out-of-turn")).resolves.toMatchObject({ payload: { code: "not_current_character" } });
 
-    const beforePosition = { ...hostCharacter.position };
-    sendCommand(hostSocket, "blocked-move", {
+    const currentCharacter = hostView.characters[hostView.activeCharacterId ?? ""];
+    if (!currentCharacter) throw new Error("Expected current character");
+    const currentSocket = currentCharacter.ownerPlayerId === host.playerId ? hostSocket : guestSocket;
+    const beforePosition = { ...currentCharacter.position };
+    sendCommand(currentSocket, "blocked-move", {
       type: "move_to",
-      characterId: hostCharacter.id,
+      characterId: currentCharacter.id,
       destination: { cardIndex: 0, x: 0, y: 0 }
     });
-    await expect(waitForError(hostSocket, "blocked-move")).resolves.toMatchObject({ payload: { code: "tile_blocked" } });
+    await expect(waitForError(currentSocket, "blocked-move")).resolves.toMatchObject({ payload: { code: "tile_blocked" } });
     const unchanged = await currentSystemView(hostSocket, host);
-    expect(unchanged.characters[hostCharacter.id]?.position).toEqual(beforePosition);
+    expect(unchanged.characters[currentCharacter.id]?.position).toEqual(beforePosition);
 
     const reconnected = await connectWithSystem(guest);
     expect(reconnected.view.characters[guestCharacter.id]?.ownerPlayerId).toBe(guest.playerId);
@@ -184,8 +195,11 @@ describe("System Crawl room integration", () => {
     expect(afterTransfer.classSelections[host.playerId]).toEqual(["infrastructure-architect"]);
     expect(afterTransfer.classSelections[guest.playerId]).toEqual(["application-developer"]);
 
-    const started = waitForSystem(guestSocket, (view) => view.phase === "player_turn");
+    const briefing = waitForSystem(guestSocket, (view) => view.phase === "incident_briefing");
     sendCommand(guestSocket, "successor-start", { type: "start_adventure" });
+    await briefing;
+    const started = waitForSystem(guestSocket, (view) => view.phase === "player_turn");
+    sendCommand(guestSocket, "successor-deploy", { type: "continue_briefing" });
     const adventure = await started;
     expect(Object.values(adventure.characters).find((character) => character.classId === "infrastructure-architect")?.ownerPlayerId).toBe(host.playerId);
     expect(Object.values(adventure.characters).find((character) => character.classId === "application-developer")?.ownerPlayerId).toBe(guest.playerId);
@@ -260,8 +274,11 @@ async function readyTwoPlayerAdventure(host: RoomSessionResponse, guest: RoomSes
   const ready = waitForSystem(hostSocket, (view) => view.phase === "ready_to_start");
   sendCommand(guestSocket, "setup-guest-class", { type: "select_class", classIds: ["it-generalist"] });
   await ready;
-  const gameplay = waitForSystem(hostSocket, (view) => view.phase === "player_turn");
+  const briefing = waitForSystem(hostSocket, (view) => view.phase === "incident_briefing");
   sendCommand(hostSocket, "setup-adventure", { type: "start_adventure" });
+  await briefing;
+  const gameplay = waitForSystem(hostSocket, (view) => view.phase === "player_turn");
+  sendCommand(hostSocket, "setup-deploy", { type: "continue_briefing" });
   await gameplay;
   return { sockets: started.sockets };
 }
@@ -275,8 +292,11 @@ async function readySoloAdventure(host: RoomSessionResponse) {
     classIds: ["infrastructure-architect", "application-developer"]
   });
   await ready;
-  const adventure = waitForSystem(socket, (view) => view.phase === "player_turn");
+  const briefing = waitForSystem(socket, (view) => view.phase === "incident_briefing");
   sendCommand(socket, "solo-start", { type: "start_adventure" });
+  await briefing;
+  const adventure = waitForSystem(socket, (view) => view.phase === "player_turn");
+  sendCommand(socket, "solo-deploy", { type: "continue_briefing" });
   await adventure;
   return { socket };
 }
@@ -311,12 +331,15 @@ function prepareNearVictory(state: SystemCrawlState, characterId: string): void 
       revealedRound: state.round,
       statuses: { movementReductionNextActivation: 0, stunnedNextActivation: false, tauntedByCharacterId: null },
       backwardCompatibilityUsedThisRound: true,
-      undocumentedDependencyTriggered: false
+      undocumentedDependencyTriggered: false,
+      halfHealthTriggered: false,
+      defeatSpawnTriggered: false,
+      specialUsedRound: null
     }
   };
   state.phase = "player_turn";
   state.activeCharacterId = characterId;
-  state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, actedCharacterIdsThisRound: [] };
+  state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, freeItemUsed: false, actedCharacterIdsThisRound: [] };
 }
 
 function prepareNearDefeat(state: SystemCrawlState, characterId: string): void {
@@ -342,13 +365,16 @@ function prepareNearDefeat(state: SystemCrawlState, characterId: string): void {
       revealedRound: state.round,
       statuses: { movementReductionNextActivation: 0, stunnedNextActivation: false, tauntedByCharacterId: null },
       backwardCompatibilityUsedThisRound: false,
-      undocumentedDependencyTriggered: false
+      undocumentedDependencyTriggered: false,
+      halfHealthTriggered: false,
+      defeatSpawnTriggered: false,
+      specialUsedRound: null
     }
   };
   state.phase = "player_turn";
   state.turnOrder = [characterId];
   state.activeCharacterId = characterId;
-  state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, actedCharacterIdsThisRound: [] };
+  state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, freeItemUsed: false, actedCharacterIdsThisRound: [] };
 }
 
 async function updateStoredSystemGame(roomCode: string, mutate: (state: SystemCrawlState) => void): Promise<void> {
