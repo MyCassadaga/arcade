@@ -53,6 +53,9 @@ function statusLabels(character: PublicCharacter): string[] {
   if (character.statuses.dodgeNextAttack) labels.push("Dodge ready");
   if (character.statuses.movementBoostNextTurn) labels.push("Move boost queued");
   if (character.statuses.actionBlockedNextTurn) labels.push("Action blocked next turn");
+  if (character.statuses.immobilizedNextTurn) labels.push("Immobilized next turn");
+  if (character.statuses.lockedAbilityId) labels.push(`${readableActionKey(`ability:${character.statuses.lockedAbilityId}`)} locked`);
+  if (character.statuses.repeatOverrideAbilityId) labels.push("Repeat override ready");
   if (character.statuses.nextDamageBonus) labels.push(`+${character.statuses.nextDamageBonus} next damage`);
   return labels;
 }

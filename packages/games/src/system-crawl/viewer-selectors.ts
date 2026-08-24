@@ -64,7 +64,8 @@ function hydrateViewerState(view: SystemCrawlViewerState): SystemCrawlState {
     hostPlayerId: view.hostPlayerId,
     players: clone(view.players),
     classSelections: clone(view.classSelections),
-    seed: null,
+    incidentId: view.incidentId,
+    seed: view.seed ?? null,
     rngState: 0,
     round: view.round,
     maps: view.maps.map((map) => map.revealed
@@ -90,7 +91,9 @@ function hydrateViewerState(view: SystemCrawlViewerState): SystemCrawlState {
         firewallShield: character.statuses.firewallShield
           ? { ...clone(character.statuses.firewallShield), expiresAtSourceTurn: Number.MAX_SAFE_INTEGER }
           : null,
-        dodgeExpiresAtTurn: character.statuses.dodgeNextAttack ? Number.MAX_SAFE_INTEGER : null
+        dodgeExpiresAtTurn: character.statuses.dodgeNextAttack ? Number.MAX_SAFE_INTEGER : null,
+        lockedAbilityExpiresAtTurn: character.statuses.lockedAbilityId ? Number.MAX_SAFE_INTEGER : null,
+        corruptionDamageKeysThisTurn: []
       }
     }])),
     enemies: Object.fromEntries(Object.values(view.enemies).map((enemy, spawnOrder) => [enemy.id, {
@@ -98,13 +101,23 @@ function hydrateViewerState(view: SystemCrawlViewerState): SystemCrawlState {
       spawnOrder,
       revealedRound: view.round,
       backwardCompatibilityUsedThisRound: false,
-      undocumentedDependencyTriggered: false
+      undocumentedDependencyTriggered: false,
+      halfHealthTriggered: false,
+      defeatSpawnTriggered: false,
+      specialUsedRound: null
     }])),
     turnOrder: [...view.turnOrder],
     activeCharacterId: view.activeCharacterId,
     turn: view.turn ? { ...clone(view.turn), actedCharacterIdsThisRound: [] } : null,
     pendingChoice: null,
+    hazards: clone(view.hazards),
+    skipNextEnemyPhase: false,
+    outageBoostPending: false,
+    pendingTurnOrderRotations: 0,
+    legendaryItemAssigned: false,
+    lastDamagingAbility: null,
     abilityHistory: abilityHistoryFromEvents(view),
+    stats: clone(view.stats),
     events: clone(view.events),
     nextEventId: (view.events.at(-1)?.id ?? 0) + 1,
     nextEntityId: 1

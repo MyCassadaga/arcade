@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ENEMY_DEFINITIONS,
+  INCIDENT_DEFINITIONS,
   getViewerReachableMovementTiles,
   type Position,
   type SystemCrawlEvent,
@@ -14,6 +16,8 @@ import { EventLog } from "./EventLog";
 import { eventAnnouncement } from "./presentation";
 import { ConnectionBadge, SystemCrawlSetup } from "./SystemCrawlSetup";
 import { SystemCrawlHud } from "./SystemCrawlHud";
+import { SystemCrawlHelp } from "./SystemCrawlHelp";
+import { useSystemCrawlAudio } from "./useSystemCrawlAudio";
 import "./system-crawl.css";
 
 export interface SystemCrawlViewProps {
@@ -24,7 +28,8 @@ export interface SystemCrawlViewProps {
   status: ConnectionStatus;
   commandPending: boolean;
   sendGame: (command: SystemCrawlCommand) => boolean;
-  playAgain: () => boolean;
+  playAgainNewSeed: () => boolean;
+  replaySameSeed: () => boolean;
   backToArcade: () => boolean;
 }
 
@@ -32,10 +37,26 @@ export function SystemCrawlView(props: SystemCrawlViewProps) {
   const { view } = props;
   const reducedMotion = usePrefersReducedMotion();
   const effects = useAuthoritativeEffects(view.events, reducedMotion);
+  const audio = useSystemCrawlAudio(view.events);
 
-  if (view.phase === "class_selection" || view.phase === "ready_to_start") return <SystemCrawlSetup {...props} />;
-  if (view.phase === "victory" || view.phase === "defeat") return <Results {...props} announcement={effects.announcement} />;
-  return <Adventure {...props} reducedMotion={reducedMotion} effects={effects} />;
+  let screen;
+  if (view.phase === "class_selection" || view.phase === "ready_to_start") screen = <SystemCrawlSetup {...props} />;
+  else if (view.phase === "incident_briefing") screen = <IncidentBriefing {...props} />;
+  else if (view.phase === "victory" || view.phase === "defeat") screen = <Results {...props} announcement={effects.announcement} />;
+  else screen = <Adventure {...props} reducedMotion={reducedMotion} effects={effects} />;
+  return <>{screen}<div className="sc-local-controls"><SystemCrawlHelp phase={view.phase} /><button className="sc-local-control" type="button" aria-pressed={audio.enabled} onClick={() => void audio.toggle()}>{audio.enabled ? "Sound on" : "Sound muted"}</button></div></>;
+}
+
+function IncidentBriefing({ view, isHost, status, commandPending, sendGame }: SystemCrawlViewProps) {
+  const incident = view.incidentId ? INCIDENT_DEFINITIONS[view.incidentId] : null;
+  const disabled = status !== "connected" || commandPending;
+  if (!incident) return null;
+  return <div className="sc-terminal sc-briefing">
+    <header><span>INCIDENT TICKET / AWAITING HOST ACKNOWLEDGEMENT</span><h1>{incident.displayTitle}</h1><p>{incident.premise}</p></header>
+    <dl className="sc-briefing__metadata">{incident.metadata.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
+    <section><span>OBJECTIVE</span><h2>{incident.objective}</h2><p>Expected threat category: <strong>{incident.threatCategory}</strong>. Detailed mechanics remain classified until encountered.</p></section>
+    {isHost ? <button className="sc-command primary" type="button" disabled={disabled} onClick={() => sendGame({ type: "continue_briefing" })}>Acknowledge and deploy</button> : <p className="sc-waiting">Waiting for the host to acknowledge the incident.</p>}
+  </div>;
 }
 
 function Adventure(props: SystemCrawlViewProps & { reducedMotion: boolean; effects: EffectState }) {
@@ -80,7 +101,7 @@ function Adventure(props: SystemCrawlViewProps & { reducedMotion: boolean; effec
 
   return <div className="sc-terminal sc-adventure">
     <header className="sc-incident-bar">
-      <div><span>ACTIVE INCIDENT / PRODUCTION NETWORK</span><h1>Crawl the system. Stabilize every node.</h1></div>
+      <div><span>ACTIVE INCIDENT / PRODUCTION NETWORK</span><h1>{view.incidentId ? INCIDENT_DEFINITIONS[view.incidentId].displayTitle : "Crawl the system"}</h1></div>
       <dl><div><dt>Round</dt><dd>{view.round}</dd></div><div><dt>Current turn</dt><dd>{active?.displayName ?? "Resolving"}</dd></div><div><dt>Frontier</dt><dd>Node {view.revealedCardCount}/4</dd></div></dl>
       <ConnectionBadge status={status} pending={commandPending} />
     </header>
@@ -96,14 +117,29 @@ function Adventure(props: SystemCrawlViewProps & { reducedMotion: boolean; effec
   </div>;
 }
 
-function Results({ view, isHost, status, commandPending, playAgain, backToArcade, announcement }: SystemCrawlViewProps & { announcement: string }) {
+function Results({ view, players, isHost, status, commandPending, playAgainNewSeed, replaySameSeed, backToArcade, announcement }: SystemCrawlViewProps & { announcement: string }) {
   const won = view.phase === "victory";
   const disabled = status !== "connected" || commandPending;
+  const incident = view.incidentId ? INCIDENT_DEFINITIONS[view.incidentId] : null;
+  const boss = incident ? ENEMY_DEFINITIONS[incident.bossId] : null;
   return <div className={`sc-terminal sc-results ${won ? "victory" : "defeat"}`}>
     <div className="sr-only" aria-live="assertive">{announcement}</div>
-    <span className="sc-results__code">INCIDENT {won ? "CLOSED" : "ESCALATED"}</span><h1>{won ? "Production stabilized" : "Incident unresolved"}</h1><p>{won ? `Every node came back online in ${view.round} rounds.` : `The response team was overwhelmed during round ${view.round}.`}</p>
-    <EventLog events={view.events} />
-    {isHost ? <div className="sc-results__actions"><button className="sc-command primary" type="button" disabled={disabled} onClick={playAgain}>Provision another run</button><button className="sc-command" type="button" disabled={disabled} onClick={backToArcade}>Back to arcade</button></div> : <p className="sc-waiting">The host can provision another run or return to the arcade.</p>}
+    <span className="sc-results__code">INCIDENT {won ? "CLOSED" : "ESCALATED"}</span><h1>{won ? "Production stabilized" : "Incident unresolved"}</h1><p>{won ? "Service restored. The retrospective has already been scheduled." : "The escalation path now includes several people who were not on the call."}</p>
+    <dl className="sc-summary-grid">
+      <div><dt>Incident</dt><dd>{incident?.displayTitle ?? "Unknown incident"}</dd></div><div><dt>Seed</dt><dd>{view.seed ?? "Unavailable"}</dd></div>
+      <div><dt>Outcome</dt><dd>{won ? "Victory" : "Defeat"}</dd></div><div><dt>Rounds</dt><dd>{view.round}</dd></div>
+      <div><dt>Maps explored</dt><dd>{view.maps.filter((map) => map.revealed).map((map) => map.displayName).filter(Boolean).join(" → ")}</dd></div>
+      <div><dt>Enemies defeated</dt><dd>{view.stats.enemiesDefeated}</dd></div><div><dt>Boss</dt><dd>{boss?.displayName ?? "Unknown"} · {view.stats.bossDefeated ? "defeated" : "active"}</dd></div>
+      <div><dt>Damage prevented</dt><dd>{view.stats.damagePrevented}</dd></div><div><dt>Items used</dt><dd>{view.stats.itemsUsed}</dd></div>
+      <div><dt>Revivals</dt><dd>{view.stats.revivals}</dd></div><div><dt>Characters downed</dt><dd>{view.stats.charactersDowned}</dd></div>
+    </dl>
+    <section className="sc-character-summary"><h2>Operator report</h2>{Object.entries(view.stats.byCharacter).map(([characterId, stats]) => {
+      const character = view.characters[characterId];
+      const owner = players.find((player) => player.id === character?.ownerPlayerId)?.displayName ?? "Player";
+      return <article key={characterId}><strong>{character?.displayName ?? characterId}</strong><span>{owner}</span><dl><div><dt>Damage</dt><dd>{stats.damageDealt}</dd></div><div><dt>Healing</dt><dd>{stats.healingPerformed}</dd></div><div><dt>Prevented</dt><dd>{stats.damagePrevented}</dd></div><div><dt>Items</dt><dd>{stats.itemsUsed}</dd></div><div><dt>Revivals</dt><dd>{stats.revivals}</dd></div><div><dt>Downs</dt><dd>{stats.downs}</dd></div></dl></article>;
+    })}</section>
+    <details className="sc-results__events"><summary>View final event log</summary><EventLog events={view.events} /></details>
+    {isHost ? <div className="sc-results__actions"><button className="sc-command primary" type="button" disabled={disabled} onClick={playAgainNewSeed}>Play Again With New Seed</button><button className="sc-command" type="button" disabled={disabled} onClick={replaySameSeed}>Replay Same Seed</button><button className="sc-command" type="button" disabled={disabled} onClick={backToArcade}>Return to Arcade</button></div> : <p className="sc-waiting">The host can replay this incident, provision a new seed, or return to the arcade.</p>}
   </div>;
 }
 

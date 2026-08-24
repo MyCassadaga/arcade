@@ -37,6 +37,7 @@ import {
 } from "./room-model";
 import {
   createSystemCrawlRoomState,
+  createSystemCrawlReplayRoomState,
   handleSystemCrawlRoomCommand,
   projectSystemCrawlRoomState
 } from "./system-crawl-adapter";
@@ -440,7 +441,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
 
     if (message.type === "host.startGame") {
-      await this.startGame(socket, playerId, message.requestId);
+      await this.startGame(socket, playerId, message.requestId, message.payload.replayMode);
       return;
     }
 
@@ -451,7 +452,7 @@ export class RoomDurableObject extends DurableObject<Env> {
 
   }
 
-  private async startGame(socket: WebSocket, playerId: string, requestId: string): Promise<void> {
+  private async startGame(socket: WebSocket, playerId: string, requestId: string, replayMode?: "new" | "same"): Promise<void> {
     const metadata = this.readMetadata();
     if (!metadata?.selectedGameId) {
       this.sendError(socket, "GAME_NOT_AVAILABLE", "Choose a game first.", requestId);
@@ -462,6 +463,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
     const players = this.readPlayers();
+    const previousGame = this.readGame();
     const context = {
       players,
       now: Date.now(),
@@ -473,7 +475,14 @@ export class RoomDurableObject extends DurableObject<Env> {
     } else if (metadata.selectedGameId === "impostor") {
       game = { gameId: "impostor", state: createImpostorState(context) };
     } else if (metadata.selectedGameId === "system-crawl") {
-      game = { gameId: "system-crawl", state: createSystemCrawlRoomState(players) };
+      const canReplay = metadata.roomPhase === "results" && previousGame?.gameId === "system-crawl" && replayMode !== undefined;
+      const seed = replayMode === "same" ? previousGame?.gameId === "system-crawl" ? previousGame.state.seed : null : crypto.randomUUID();
+      game = {
+        gameId: "system-crawl",
+        state: canReplay && seed
+          ? createSystemCrawlReplayRoomState(players, previousGame.state, seed)
+          : createSystemCrawlRoomState(players)
+      };
     } else {
       this.sendError(socket, "GAME_NOT_AVAILABLE", "That game is not available.", requestId);
       return;

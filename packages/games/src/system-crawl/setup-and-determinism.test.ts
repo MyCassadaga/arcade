@@ -85,7 +85,7 @@ describe("System Crawl setup, determinism, and serialization", () => {
     const generalist = characterByClass(state, "it-generalist");
     state.phase = "player_turn";
     state.activeCharacterId = generalist.id;
-    state.turn = { movementAllowance: 5, movementSpent: 0, actionUsed: false, actionBlocked: false, actedCharacterIdsThisRound: [] };
+    state.turn = { movementAllowance: 5, movementSpent: 0, actionUsed: false, actionBlocked: false, freeItemUsed: false, actedCharacterIdsThisRound: [] };
     state = reduceSystemCrawl(state, { type: "use_ability", characterId: generalist.id, abilityId: "google-it" }, generalist.ownerPlayerId).state;
     const owner = projectSystemCrawlState(state, generalist.ownerPlayerId);
     const other = projectSystemCrawlState(state, "player-1");
@@ -101,7 +101,7 @@ describe("System Crawl setup, determinism, and serialization", () => {
     expect(serialized).not.toContain(state.maps[1]?.templateId ?? "unreachable-sentinel");
   });
 
-  it("validates all eight authored maps for dimensions, routes, and spawn legality", () => {
+  it("validates all eighteen authored maps for dimensions, routes, and spawn legality", () => {
     expect(validateAllMapTemplates()).toEqual([]);
   });
 });

@@ -59,7 +59,10 @@ export function projectSystemCrawlState(state: SystemCrawlState, viewerPlayerId:
       dodgeNextAttack: character.statuses.dodgeNextAttack,
       movementBoostNextTurn: character.statuses.movementBoostNextTurn,
       actionBlockedNextTurn: character.statuses.actionBlockedNextTurn,
-      nextDamageBonus: character.statuses.nextDamageBonus
+      immobilizedNextTurn: character.statuses.immobilizedNextTurn,
+      nextDamageBonus: character.statuses.nextDamageBonus,
+      repeatOverrideAbilityId: character.statuses.repeatOverrideAbilityId,
+      lockedAbilityId: character.statuses.lockedAbilityId
     }
   }]));
   const pendingChoice = state.pendingChoice ? {
@@ -78,6 +81,8 @@ export function projectSystemCrawlState(state: SystemCrawlState, viewerPlayerId:
     hostPlayerId: state.hostPlayerId,
     players: clone(state.players),
     classSelections: clone(state.classSelections),
+    incidentId: state.incidentId,
+    ...(state.phase === "victory" || state.phase === "defeat" ? { seed: state.seed } : {}),
     round: state.round,
     maps,
     revealedCardCount: state.revealedCardCount,
@@ -89,9 +94,12 @@ export function projectSystemCrawlState(state: SystemCrawlState, viewerPlayerId:
       movementAllowance: state.turn.movementAllowance,
       movementSpent: state.turn.movementSpent,
       actionUsed: state.turn.actionUsed,
-      actionBlocked: state.turn.actionBlocked
+      actionBlocked: state.turn.actionBlocked,
+      freeItemUsed: state.turn.freeItemUsed
     } : null,
     pendingChoice,
+    hazards: clone(state.hazards),
+    stats: clone(state.stats),
     events: clone(state.events)
   };
 }
