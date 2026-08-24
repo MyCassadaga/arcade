@@ -8,15 +8,20 @@ import type {
   TypedGameViewerState,
   WhoSaidThatPublicView
 } from "@team-arcade/shared";
+import type { SystemCrawlViewerState } from "@team-arcade/games";
+import { SystemCrawlScreen } from "./SystemCrawlScreen";
+import type { ConnectionStatus } from "./useRoomSocket";
 
 interface GameScreenProps {
   game: TypedGameViewerState;
   room: RoomView;
   selfId: string;
+  status: ConnectionStatus;
+  commandPending: boolean;
   send: (message: ClientMessage) => boolean;
 }
 
-export function GameScreen({ game, room, selfId, send }: GameScreenProps) {
+export function GameScreen({ game, room, selfId, status, commandPending, send }: GameScreenProps) {
   const self = room.players.find((player) => player.id === selfId);
   const sendGame = (command: GameCommand) => send({
     type: "game.command",
@@ -26,6 +31,28 @@ export function GameScreen({ game, room, selfId, send }: GameScreenProps) {
   const hostAdvance = () => send({ type: "host.advance", requestId: crypto.randomUUID(), payload: {} });
   const playAgain = () => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
   const backToArcade = () => send({ type: "host.backToArcade", requestId: crypto.randomUUID(), payload: {} });
+
+  if (game.gameId === "system-crawl") {
+    return (
+      <section className="game-stage system-crawl" aria-live="polite">
+        <div className="phase-topline">
+          <span>System Crawl</span>
+          <span>{game.phase.replaceAll("_", " ")}</span>
+        </div>
+        <SystemCrawlScreen
+          view={game.public as SystemCrawlViewerState}
+          players={room.players}
+          selfId={selfId}
+          isHost={self?.isHost === true}
+          status={status}
+          commandPending={commandPending}
+          sendGame={sendGame}
+          playAgain={playAgain}
+          backToArcade={backToArcade}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className={`game-stage ${game.gameId}`} aria-live="polite">

@@ -8,6 +8,7 @@ interface RoomSocketState {
   game: TypedGameViewerState | null;
   status: ConnectionStatus;
   message: string | null;
+  commandPending: boolean;
   send: (message: ClientMessage) => boolean;
 }
 
@@ -16,7 +17,15 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
   const [game, setGame] = useState<TypedGameViewerState | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [message, setMessage] = useState<string | null>(null);
+  const [commandPending, setCommandPending] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const pendingRequestIdsRef = useRef(new Set<string>());
+
+  const finishRequest = useCallback((requestId: string | undefined) => {
+    if (!requestId) return;
+    pendingRequestIdsRef.current.delete(requestId);
+    setCommandPending(pendingRequestIdsRef.current.size > 0);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -61,7 +70,10 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
           attempt = 0;
         } else if (serverMessage.type === "game.state") {
           setGame(serverMessage.payload as TypedGameViewerState);
+        } else if (serverMessage.type === "command.ack") {
+          finishRequest(serverMessage.requestId);
         } else if (serverMessage.type === "error") {
+          finishRequest(serverMessage.requestId);
           setMessage(serverMessage.payload.message);
           if (["INVALID_SESSION", "ROOM_EXPIRED", "ROOM_NOT_FOUND"].includes(serverMessage.payload.code)) {
             fatal = true;
@@ -72,6 +84,8 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
 
       socket.addEventListener("close", () => {
         if (disposed || fatal) return;
+        pendingRequestIdsRef.current.clear();
+        setCommandPending(false);
         window.clearInterval(heartbeatTimer);
         attempt += 1;
         setStatus(navigator.onLine ? "reconnecting" : "offline");
@@ -114,16 +128,21 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [roomCode, sessionToken]);
+  }, [finishRequest, roomCode, sessionToken]);
 
   const send = useCallback((clientMessage: ClientMessage): boolean => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       setMessage("Wait for the arcade to reconnect, then try again.");
       return false;
     }
+    if (clientMessage.type !== "ping" && clientMessage.type !== "room.reconnect") {
+      pendingRequestIdsRef.current.add(clientMessage.requestId);
+      setCommandPending(true);
+      setMessage(null);
+    }
     socketRef.current.send(JSON.stringify(clientMessage));
     return true;
   }, []);
 
-  return { room, game, status, message, send };
+  return { room, game, status, message, commandPending, send };
 }

@@ -12,6 +12,8 @@ import {
   handleImpostorCommand,
   handleWhoSaidThatCommand,
   type ImpostorState,
+  SystemCrawlRuleError,
+  type SystemCrawlState,
   type WhoSaidThatState
 } from "@team-arcade/games";
 import {
@@ -22,6 +24,7 @@ import {
   type GameCommand,
   type RoomSessionResponse,
   type ServerMessage,
+  type SystemCrawlCommand,
   type TypedGameViewerState
 } from "@team-arcade/shared";
 import {
@@ -32,6 +35,11 @@ import {
   type RoomMetadata,
   type StoredPlayer
 } from "./room-model";
+import {
+  createSystemCrawlRoomState,
+  handleSystemCrawlRoomCommand,
+  projectSystemCrawlRoomState
+} from "./system-crawl-adapter";
 import type { Env } from "./types";
 
 const HOST_GRACE_MS = 60_000;
@@ -70,7 +78,8 @@ interface NewPlayer {
 
 type StoredGame =
   | { gameId: "who-said-that"; state: WhoSaidThatState }
-  | { gameId: "impostor"; state: ImpostorState };
+  | { gameId: "impostor"; state: ImpostorState }
+  | { gameId: "system-crawl"; state: SystemCrawlState };
 
 export class RoomDurableObject extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -251,7 +260,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     try {
       await this.handleAuthenticatedMessage(socket, attachment.playerId, parsed.data);
     } catch (error) {
-      if (error instanceof GameRuleError) {
+      if (error instanceof GameRuleError || error instanceof SystemCrawlRuleError) {
         this.sendError(socket, error.code, error.message, parsed.data.requestId);
         return;
       }
@@ -314,8 +323,16 @@ export class RoomDurableObject extends DurableObject<Env> {
         this.ctx.storage.transactionSync(() => {
           this.sql.exec("UPDATE players SET is_host = 0 WHERE is_host = 1");
           this.sql.exec("UPDATE players SET is_host = 1 WHERE id = ?", successor.id);
+          const game = this.readGame();
+          if (game?.gameId === "system-crawl" && game.state.hostPlayerId !== successor.id) {
+            this.writeGame({
+              gameId: game.gameId,
+              state: { ...game.state, hostPlayerId: successor.id }
+            });
+          }
         });
         this.broadcast({ type: "room.presence", payload: this.roomView() });
+        this.broadcastGameState();
         console.log(JSON.stringify({ event: "host.transferred", roomCode: metadata.roomCode, playerId: successor.id }));
       }
     }
@@ -450,9 +467,17 @@ export class RoomDurableObject extends DurableObject<Env> {
       now: Date.now(),
       random: secureRandom
     };
-    const game: StoredGame = metadata.selectedGameId === "who-said-that"
-      ? { gameId: "who-said-that", state: createWhoSaidThatState(context) }
-      : { gameId: "impostor", state: createImpostorState(context) };
+    let game: StoredGame;
+    if (metadata.selectedGameId === "who-said-that") {
+      game = { gameId: "who-said-that", state: createWhoSaidThatState(context) };
+    } else if (metadata.selectedGameId === "impostor") {
+      game = { gameId: "impostor", state: createImpostorState(context) };
+    } else if (metadata.selectedGameId === "system-crawl") {
+      game = { gameId: "system-crawl", state: createSystemCrawlRoomState(players) };
+    } else {
+      this.sendError(socket, "GAME_NOT_AVAILABLE", "That game is not available.", requestId);
+      return;
+    }
     this.persistGameMutation({ ...metadata, roomPhase: "playing", lastActivityAt: Date.now() }, game, {}, playerId, requestId);
     this.send(socket, { type: "command.ack", requestId, payload: { accepted: true } });
     this.broadcast({ type: "room.presence", payload: this.roomView() });
@@ -466,6 +491,10 @@ export class RoomDurableObject extends DurableObject<Env> {
     const game = this.readGame();
     if (!metadata || !game) {
       this.sendError(socket, "INVALID_PHASE", "No game is active.", requestId);
+      return;
+    }
+    if (game.gameId === "system-crawl") {
+      this.sendError(socket, "INVALID_PHASE", "System Crawl advances through player actions.", requestId);
       return;
     }
     const result = game.gameId === "who-said-that"
@@ -501,17 +530,50 @@ export class RoomDurableObject extends DurableObject<Env> {
       this.sendError(socket, "STALE_PHASE", "No game command is available right now.", requestId);
       return;
     }
-    const result = game.gameId === "who-said-that"
-      ? command.type.startsWith("wst.")
-        ? handleWhoSaidThatCommand(game.state, command as Extract<GameCommand, { type: `wst.${string}` }>, playerId, secureRandom)
-        : (() => { throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game."); })()
-      : command.type.startsWith("impostor.")
-        ? handleImpostorCommand(game.state, command as Extract<GameCommand, { type: `impostor.${string}` }>, playerId)
-        : (() => { throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game."); })();
-    const nextGame: StoredGame = game.gameId === "who-said-that"
-      ? { gameId: game.gameId, state: result.state as WhoSaidThatState }
-      : { gameId: game.gameId, state: result.state as ImpostorState };
-    this.persistGameMutation({ ...metadata, lastActivityAt: Date.now() }, nextGame, result.scoreDelta, playerId, requestId);
+    let nextGame: StoredGame;
+    let scoreDelta: Readonly<Record<string, number>> = {};
+    if (game.gameId === "who-said-that") {
+      if (!command.type.startsWith("wst.")) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
+      const result = handleWhoSaidThatCommand(
+        game.state,
+        command as Extract<GameCommand, { type: `wst.${string}` }>,
+        playerId,
+        secureRandom
+      );
+      nextGame = { gameId: game.gameId, state: result.state };
+      scoreDelta = result.scoreDelta ?? {};
+    } else if (game.gameId === "impostor") {
+      if (!command.type.startsWith("impostor.")) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
+      const result = handleImpostorCommand(
+        game.state,
+        command as Extract<GameCommand, { type: `impostor.${string}` }>,
+        playerId
+      );
+      nextGame = { gameId: game.gameId, state: result.state };
+      scoreDelta = result.scoreDelta ?? {};
+    } else {
+      if (command.type.startsWith("wst.") || command.type.startsWith("impostor.")) {
+        throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
+      }
+      const currentHost = this.readPlayers().find((candidate) => candidate.isHost);
+      if (!currentHost) throw new GameRuleError("NOT_HOST", "This room does not have a host.");
+      const result = handleSystemCrawlRoomCommand(
+        game.state,
+        command as SystemCrawlCommand,
+        playerId,
+        currentHost.id
+      );
+      nextGame = { gameId: game.gameId, state: result.state };
+    }
+    const isFinished = nextGame.gameId === "system-crawl"
+      && (nextGame.state.phase === "victory" || nextGame.state.phase === "defeat");
+    this.persistGameMutation(
+      { ...metadata, roomPhase: isFinished ? "results" : "playing", lastActivityAt: Date.now() },
+      nextGame,
+      scoreDelta,
+      playerId,
+      requestId
+    );
     this.send(socket, { type: "command.ack", requestId, payload: { accepted: true } });
     this.broadcast({ type: "room.presence", payload: this.roomView() });
     this.broadcastGameState();
@@ -630,19 +692,27 @@ export class RoomDurableObject extends DurableObject<Env> {
     const player = this.readPlayers().find((candidate) => candidate.id === playerId);
     if (!player) throw new GameRuleError("INVALID_SESSION", "Player no longer exists.");
     const viewer = { playerId, isHost: player.isHost };
-    return game.gameId === "who-said-that"
-      ? {
-          gameId: game.gameId,
-          phase: game.state.phase,
-          public: getWhoSaidThatPublicView(game.state),
-          private: getWhoSaidThatPrivateView(game.state, viewer)
-        }
-      : {
-          gameId: game.gameId,
-          phase: game.state.phase,
-          public: getImpostorPublicView(game.state),
-          private: getImpostorPrivateView(game.state, viewer)
-        };
+    if (game.gameId === "who-said-that") {
+      return {
+        gameId: game.gameId,
+        phase: game.state.phase,
+        public: getWhoSaidThatPublicView(game.state),
+        private: getWhoSaidThatPrivateView(game.state, viewer)
+      };
+    }
+    if (game.gameId === "impostor") {
+      return {
+        gameId: game.gameId,
+        phase: game.state.phase,
+        public: getImpostorPublicView(game.state),
+        private: getImpostorPrivateView(game.state, viewer)
+      };
+    }
+    return {
+      gameId: game.gameId,
+      phase: game.state.phase,
+      public: projectSystemCrawlRoomState(game.state, playerId)
+    };
   }
 
   private sendGameState(socket: WebSocket, playerId: string): void {

@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./rng";
 export * from "./pathfinding";
 export * from "./selectors";
+export * from "./viewer-selectors";
 export * from "./projection";
 export * from "./engine";
 export * from "./definition";
