@@ -14,6 +14,14 @@ export const GAME_CATALOG = [
     duration: "15–20 min",
     playerRange: "4–12 players",
     icon: "mask"
+  },
+  {
+    id: "system-crawl",
+    name: "System Crawl",
+    description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",
+    duration: "30–45 min",
+    playerRange: "1–4 players",
+    icon: "terminal"
   }
 ] as const;
 

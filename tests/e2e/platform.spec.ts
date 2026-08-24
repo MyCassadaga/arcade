@@ -14,6 +14,52 @@ test("entry and lobby primary actions remain usable on a phone-sized viewport", 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("two players select, start, and synchronize a System Crawl round", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  try {
+    await host.goto("/");
+    await host.getByLabel("Display name").fill("Crawl Host");
+    await host.getByRole("button", { name: "Create game" }).click();
+    const roomCode = await host.locator(".room-banner h1").innerText();
+
+    await guest.goto(`/?room=${roomCode}`);
+    await guest.getByLabel("Display name").fill("Crawl Guest");
+    await guest.getByRole("button", { name: "Join the fun" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.locator(".player-list li")).toHaveCount(2)));
+
+    await host.getByRole("button", { name: /System Crawl/ }).click();
+    await expect(guest.getByRole("button", { name: /System Crawl/ })).toHaveAttribute("aria-pressed", "true");
+    await host.getByRole("button", { name: "Start game" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Choose your support class" })).toBeVisible()));
+
+    await host.getByRole("button", { name: /Infrastructure Architect/ }).click();
+    await guest.getByRole("button", { name: /Application Developer/ }).click();
+    await expect(host.getByRole("button", { name: "Start adventure" })).toBeVisible();
+    await host.getByRole("button", { name: "Start adventure" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Round 1" })).toBeVisible()));
+
+    await expect(host.locator(".sc-turn-chip strong")).toHaveText("Infrastructure Architect");
+    await expect(host.getByRole("button", { name: "Reboot / End turn" })).toBeEnabled();
+    await expect(guest.getByRole("button", { name: "Reboot / End turn" })).toHaveCount(0);
+    await host.getByRole("button", { name: "Reboot / End turn" }).click();
+
+    await expect(guest.locator(".sc-turn-chip strong")).toHaveText("Application Developer");
+    await expect(guest.getByRole("button", { name: "Reboot / End turn" })).toBeEnabled();
+    await guest.getByRole("button", { name: "Reboot / End turn" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Round 2" })).toBeVisible()));
+
+    await guest.reload();
+    await expect(guest.getByRole("heading", { name: "Round 2" })).toBeVisible();
+    await expect(guest.getByText("Application Developer", { exact: true }).first()).toBeVisible();
+    await expect(guest.locator(".sc-turn-chip strong")).toHaveText(await host.locator(".sc-turn-chip strong").innerText());
+  } finally {
+    await Promise.all([hostContext.close(), guestContext.close()]);
+  }
+});
+
 test("seven players complete Who Said That and an Impostor round without losing private state", async ({ browser }) => {
   const contexts: BrowserContext[] = [];
   const pages: Page[] = [];

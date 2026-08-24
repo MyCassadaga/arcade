@@ -121,7 +121,7 @@ function EntryScreen({ initialCode, onSession }: { initialCode: string; onSessio
 }
 
 function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: () => void }) {
-  const { room, game, status, message, send } = useRoomSocket(session.roomCode, session.sessionToken);
+  const { room, game, status, message, commandPending, send } = useRoomSocket(session.roomCode, session.sessionToken);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const self = room?.players.find((player) => player.id === session.playerId);
   const host = room?.players.find((player) => player.isHost);
@@ -183,7 +183,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
       )}
 
       <div className={`lobby-layout ${game ? "game-layout" : ""}`}>
-        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} send={send} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
+        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
             {!self?.isHost && <span className="host-note">{host?.connected === false ? "Host disconnected — holding their seat" : `${host?.displayName ?? "The host"} is choosing`}</span>}
@@ -197,10 +197,10 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
                   className={`game-card game-${index + 1} ${selected ? "selected" : ""}`}
                   key={game.id}
                   aria-pressed={selected}
-                  disabled={!self?.isHost || status !== "connected"}
+                  disabled={!self?.isHost || status !== "connected" || commandPending}
                   onClick={() => selectGame(game.id)}
                 >
-                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : "⌁"}</span>
+                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : "⌁"}</span>
                   <span className="game-title">{game.name}</span>
                   <span className="game-description">{game.description}</span>
                   <span className="game-meta"><span>{game.duration}</span><span>{game.playerRange}</span></span>
@@ -213,7 +213,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
             <button
               className="primary-button start-button"
               type="button"
-              disabled={!room?.selectedGameId || status !== "connected"}
+              disabled={!room?.selectedGameId || status !== "connected" || commandPending}
               onClick={() => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} })}
             >
               {room?.selectedGameId ? "Start game" : "Choose a game"}
