@@ -182,7 +182,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         </div>
       )}
 
-      <div className={`lobby-layout ${game ? "game-layout" : ""}`}>
+      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""}`}>
         {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>

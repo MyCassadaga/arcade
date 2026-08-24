@@ -14,7 +14,7 @@ test("entry and lobby primary actions remain usable on a phone-sized viewport", 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("two players select, start, and synchronize a System Crawl round", async ({ browser }) => {
+test("two players synchronize a System Crawl move and ability across desktop and phone layouts", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();
   const host = await hostContext.newPage();
@@ -33,28 +33,40 @@ test("two players select, start, and synchronize a System Crawl round", async ({
     await host.getByRole("button", { name: /System Crawl/ }).click();
     await expect(guest.getByRole("button", { name: /System Crawl/ })).toHaveAttribute("aria-pressed", "true");
     await host.getByRole("button", { name: "Start game" }).click();
-    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Choose your support class" })).toBeVisible()));
+    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Assemble the response team" })).toBeVisible()));
 
-    await host.getByRole("button", { name: /Infrastructure Architect/ }).click();
-    await guest.getByRole("button", { name: /Application Developer/ }).click();
-    await expect(host.getByRole("button", { name: "Start adventure" })).toBeVisible();
-    await host.getByRole("button", { name: "Start adventure" }).click();
-    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Round 1" })).toBeVisible()));
+    await host.getByRole("button", { name: /Application Developer/ }).click();
+    await guest.getByRole("button", { name: /Infrastructure Architect/ }).click();
+    await expect(host.getByRole("button", { name: "Initialize adventure" })).toBeVisible();
+    await host.getByRole("button", { name: "Initialize adventure" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "System topology" })).toBeVisible()));
 
-    await expect(host.locator(".sc-turn-chip strong")).toHaveText("Infrastructure Architect");
-    await expect(host.getByRole("button", { name: "Reboot / End turn" })).toBeEnabled();
-    await expect(guest.getByRole("button", { name: "Reboot / End turn" })).toHaveCount(0);
-    await host.getByRole("button", { name: "Reboot / End turn" }).click();
+    await expect(host.locator(".sc-incident-bar dd").nth(1)).toHaveText("Application Developer");
+    const destination = host.getByRole("gridcell", { name: /valid movement destination/i }).first();
+    await destination.click();
+    await Promise.all([host, guest].map((page) => expect(page.getByText("character moved", { exact: true })).toBeVisible()));
 
-    await expect(guest.locator(".sc-turn-chip strong")).toHaveText("Application Developer");
-    await expect(guest.getByRole("button", { name: "Reboot / End turn" })).toBeEnabled();
-    await guest.getByRole("button", { name: "Reboot / End turn" }).click();
-    await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Round 2" })).toBeVisible()));
+    await host.getByRole("button", { name: /Works on My Machine/ }).click();
+    await host.getByRole("gridcell", { name: /valid works on my machine target/i }).click();
+    await Promise.all([host, guest].map((page) => expect(page.getByText("ability used", { exact: true })).toBeVisible()));
+    await expect(host.getByRole("button", { name: "End Turn" })).toBeEnabled();
+    await expect(guest.getByRole("button", { name: /End Turn/ })).toBeDisabled();
+    await host.getByRole("button", { name: "End Turn" }).click();
+
+    await guest.setViewportSize({ width: 390, height: 844 });
+    await expect(guest.locator(".sc-incident-bar dd").nth(1)).toHaveText("Infrastructure Architect");
+    await expect(guest.locator(".sc-board-console")).toBeVisible();
+    await expect(guest.locator(".sc-hud")).toBeVisible();
+    await expect(guest.getByRole("button", { name: "End Turn and Reboot Abilities" })).toBeEnabled();
+    expect(await guest.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await guest.getByRole("button", { name: "End Turn and Reboot Abilities" }).click();
+    await Promise.all([host, guest].map((page) => expect(page.locator(".sc-incident-bar dd").first()).toHaveText("2")));
 
     await guest.reload();
-    await expect(guest.getByRole("heading", { name: "Round 2" })).toBeVisible();
+    await expect(guest.getByRole("heading", { name: "System topology" })).toBeVisible();
+    await expect(guest.locator(".sc-incident-bar dd").first()).toHaveText("2");
     await expect(guest.getByText("Application Developer", { exact: true }).first()).toBeVisible();
-    await expect(guest.locator(".sc-turn-chip strong")).toHaveText(await host.locator(".sc-turn-chip strong").innerText());
+    await expect(guest.locator(".sc-incident-bar dd").nth(1)).toHaveText(await host.locator(".sc-incident-bar dd").nth(1).innerText());
   } finally {
     await Promise.all([hostContext.close(), guestContext.close()]);
   }
