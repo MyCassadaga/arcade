@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ABILITY_DEFINITIONS, CLASS_DEFINITIONS, type SystemCrawlClassId, type SystemCrawlViewerState } from "@team-arcade/games";
 import type { PlayerView, SystemCrawlCommand } from "@team-arcade/shared";
 import type { ConnectionStatus } from "../../useRoomSocket";
+import { ABILITY_PRESENTATION } from "./presentation";
 import { CharacterSprite } from "./sprites/CharacterSprite";
 
 interface SetupProps {
@@ -42,7 +43,8 @@ export function SystemCrawlSetup({ view, players, selfId, isHost, status, comman
         <span className="sc-class-state">{active ? "SELECTED" : assigned ? "ASSIGNED" : "AVAILABLE"}</span>
         <svg viewBox="0 0 24 34"><CharacterSprite classId={definition.id} displayName={definition.displayName} current={active} /></svg>
         <strong>{definition.displayName}</strong><small>{definition.maxHp} HP · {definition.movement} MOVE</small>
-        <ul>{definition.abilityIds.map((id) => <li key={id}>{ABILITY_DEFINITIONS[id].displayName}</li>)}</ul>
+        <div className="sc-class-ability-label">Class abilities</div>
+        <ul>{definition.abilityIds.map((id) => <li key={id}><strong>{ABILITY_DEFINITIONS[id].displayName}</strong><span>{ABILITY_PRESENTATION[id].impact}</span></li>)}</ul>
       </button>;
     })}</div>
     <footer className="sc-setup__actions">

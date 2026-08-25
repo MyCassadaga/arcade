@@ -58,6 +58,14 @@ export function getValidAbilityTargets(
   return getTargetsForDefinition(state, character, definition.id);
 }
 
+export function getValidAttackTargets(state: SystemCrawlState, characterId: string): SystemCrawlTarget[] {
+  const character = state.characters[characterId];
+  if (!character || character.downed) return [];
+  return Object.values(state.enemies)
+    .filter((enemy) => enemy.hp > 0 && inRangeAndSight(state, character, enemy.position, 1))
+    .map((enemy) => ({ type: "enemy" as const, enemyId: enemy.id }));
+}
+
 export function getValidItemTargets(state: SystemCrawlState, characterId: string): SystemCrawlTarget[] {
   const character = state.characters[characterId];
   const itemId = character?.carriedItemId;

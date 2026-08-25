@@ -3,6 +3,7 @@ import {
   ABILITY_DEFINITIONS,
   CLASS_DEFINITIONS,
   ITEM_DEFINITIONS,
+  getViewerValidAttackTargets,
   getViewerRestartTargets,
   getViewerValidAbilityTargets,
   getViewerValidItemTargets,
@@ -15,6 +16,7 @@ import type { SystemCrawlCommand } from "@team-arcade/shared";
 import { ABILITY_PRESENTATION, ITEM_PRESENTATION } from "./presentation";
 
 export type ActionSelection =
+  | { kind: "attack"; label: string; targets: SystemCrawlTarget[] }
   | { kind: "ability"; abilityId: SystemCrawlAbilityId; label: string; targets: SystemCrawlTarget[] }
   | { kind: "item"; label: string; targets: SystemCrawlTarget[] }
   | { kind: "restart"; label: string; targetCharacterIds: string[] }
@@ -34,10 +36,20 @@ export function AbilityPanel({ view, character, ownsCurrent, commandReady, selec
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const definition = CLASS_DEFINITIONS[character.classId];
   const canSpendAction = ownsCurrent && view.phase === "player_turn" && !character.downed && !view.turn?.actionBlocked && !view.turn?.actionUsed && commandReady;
+  const attackTargets = getViewerValidAttackTargets(view, character.id);
   const restartTargets = getViewerRestartTargets(view, character.id);
+  const attackRepeated = character.lastActionKey === "system:attack";
+  const attackReason = standardAttackUnavailableReason({ view, character, ownsCurrent, commandReady, repeated: attackRepeated, targets: attackTargets });
 
   return <section className="sc-ability-panel" aria-labelledby="sc-ability-title">
-    <header><div><span>ACTION MATRIX</span><h3 id="sc-ability-title">Abilities</h3></div>{selection && <button type="button" className="sc-cancel-target" onClick={() => onSelection(null)}>Cancel targeting <kbd>Esc</kbd></button>}</header>
+    <header><div><span>ACTION MATRIX</span><h3 id="sc-ability-title">Actions</h3></div>{selection && <button type="button" className="sc-cancel-target" onClick={() => onSelection(null)}>Cancel targeting <kbd>Esc</kbd></button>}</header>
+    <h3 className="sc-section-label">Standard action</h3>
+    <button type="button" className={`sc-wide-action sc-basic-attack ${selection?.kind === "attack" ? "is-selected" : ""}`} aria-pressed={selection?.kind === "attack"} disabled={Boolean(attackReason)} onClick={() => onSelection({ kind: "attack", label: "Attack", targets: attackTargets })}>
+      <strong>Attack</strong><span>Strike one adjacent hostile process for 1 damage.</span><small>RANGE 1 · 1 DAMAGE · UNIVERSAL</small>
+      {attackReason && <em>{attackReason}</em>}
+    </button>
+
+    <h3 className="sc-section-label">Class abilities</h3>
     <div className="sc-ability-list">{definition.abilityIds.map((abilityId) => {
       const ability = ABILITY_DEFINITIONS[abilityId];
       const targets = getViewerValidAbilityTargets(view, character.id, abilityId);
@@ -112,5 +124,23 @@ function unavailableReason({ view, character, ownsCurrent, commandReady, repeate
   if (repeated) return "Used last turn — Reboot or choose another action";
   if (abilityId === "google-it" && character.carriedItemId) return "Required item slot condition — discard the carried item first";
   if (targets.length === 0) return "No valid target";
+  return null;
+}
+
+function standardAttackUnavailableReason({ view, character, ownsCurrent, commandReady, repeated, targets }: {
+  view: SystemCrawlViewerState;
+  character: PublicCharacter;
+  ownsCurrent: boolean;
+  commandReady: boolean;
+  repeated: boolean;
+  targets: readonly SystemCrawlTarget[];
+}): string | null {
+  if (!ownsCurrent || view.phase !== "player_turn") return "Available on this operator's turn";
+  if (!commandReady) return "Command pending or uplink unavailable";
+  if (character.downed) return "Character is downed";
+  if (view.turn?.actionBlocked) return "Action blocked by negative status";
+  if (view.turn?.actionUsed) return "Action already spent";
+  if (repeated) return "Used last turn — choose a class ability or Reboot";
+  if (targets.length === 0) return "Move adjacent to an enemy to Attack";
   return null;
 }

@@ -38,7 +38,7 @@ export function useSystemCrawlAudio(events: readonly SystemCrawlEvent[]) {
 
 function playTone(context: AudioContext, event: SystemCrawlEvent): void {
   const frequencies: Partial<Record<SystemCrawlEvent["type"], number>> = {
-    character_moved: 260, enemy_attacked: 150, damage_dealt: 120, healing: 520,
+    character_moved: 260, character_attacked: 210, enemy_attacked: 150, damage_dealt: 120, healing: 520,
     item_picked_up: 660, map_card_revealed: 390, boss_phase_changed: 95, victory: 740, defeat: 80
   };
   const frequency = frequencies[event.type];

@@ -29,6 +29,9 @@ describe("final System Crawl interface", () => {
     for (const className of ["Infrastructure Architect", "Senior Systems Analyst", "Application Developer", "IT Generalist"]) {
       expect(screen.getByRole("img", { name: new RegExp(`${className}.*character sprite`, "i") })).toBeInTheDocument();
     }
+    for (const abilityName of ["Packet Drop", "Firewall", "Hotfix", "Deploy to Production", "Google It"]) {
+      expect(screen.getAllByText(abilityName).length).toBeGreaterThan(0);
+    }
     await user.click(screen.getByRole("button", { name: /Infrastructure Architect/ }));
     await user.click(screen.getByRole("button", { name: /Application Developer/ }));
     await user.click(screen.getByRole("button", { name: "Save two operators" }));
@@ -73,6 +76,38 @@ describe("final System Crawl interface", () => {
     expect(screen.queryByRole("button", { name: /Cancel targeting/ })).not.toBeInTheDocument();
   });
 
+  it("offers a universal adjacent Attack and sends its authoritative target", async () => {
+    const user = userEvent.setup();
+    const sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; });
+    const state = soloGameplay();
+    const active = state.characters[state.activeCharacterId ?? ""];
+    const enemy = Object.values(state.enemies)[0];
+    if (!active || !enemy) throw new Error("Expected an active character and enemy");
+    active.position = { cardIndex: 0, x: 2, y: 3 };
+    enemy.position = { cardIndex: 0, x: 3, y: 3 };
+    const view = projectSystemCrawlState(state, "host");
+    renderScreen(view, [hostPlayer], sendGame);
+
+    await user.click(screen.getByRole("button", { name: /^Attack/ }));
+    fireEvent.keyDown(screen.getByRole("gridcell", { name: /valid attack target/i }), { key: "Enter" });
+    expect(sendGame).toHaveBeenLastCalledWith({
+      type: "attack",
+      characterId: active.id,
+      target: { type: "enemy", enemyId: enemy.id }
+    });
+  });
+
+  it("labels item caches and names every visible threat on both the board and HUD", () => {
+    const state = soloGameplay();
+    const enemy = Object.values(state.enemies)[0];
+    if (!enemy) throw new Error("Expected a visible enemy");
+    renderScreen(projectSystemCrawlState(state, "host"), [hostPlayer]);
+    expect(screen.getByRole("heading", { name: "Visible threats" })).toBeInTheDocument();
+    expect(screen.getAllByText(enemy.displayName).length).toBeGreaterThan(0);
+    expect(screen.getByText("ITEM CACHE", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(/ITEM CACHE — step onto it/)).toBeInTheDocument();
+  });
+
   it("explains locked actions and shows both solo-owned character cards", () => {
     const state = soloGameplay();
     const active = state.characters[state.activeCharacterId ?? ""];
@@ -98,7 +133,7 @@ describe("final System Crawl interface", () => {
     rerender(screenElement(hostView, [hostPlayer], sendGame, { status: "reconnecting" }));
     expect(screen.getByText(/Reconnecting — the latest board remains available/)).toBeInTheDocument();
     rerender(screenElement(hostView, [hostPlayer], sendGame));
-    expect(screen.getByRole("button", { name: /End Turn and Reboot Abilities/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "End Turn and Reboot" })).toBeEnabled();
     expect(screen.getAllByRole("gridcell", { name: /valid movement destination/i }).length).toBeGreaterThan(0);
   });
 

@@ -27,6 +27,7 @@ import { CacheSprite, DoorSprite, PropSprite, UplinkSprite } from "./sprites/Boa
 
 export type BoardInteraction =
   | { kind: "movement" }
+  | { kind: "attack"; label: string; targets: SystemCrawlTarget[] }
   | { kind: "ability"; label: string; targets: SystemCrawlTarget[] }
   | { kind: "item"; label: string; targets: SystemCrawlTarget[] }
   | { kind: "restart"; label: string; targets: SystemCrawlTarget[] };
@@ -191,7 +192,7 @@ export function SystemCrawlBoard({
         </svg>
       </div>
       <footer className="sc-board-legend" aria-label="Board legend">
-        <span><i className="movement" />Move destination</span><span><i className="target" />Selected action target</span><span><i className="uplink" />Network uplink</span><span><i className="hostile" />Hostile process</span>
+        <span><i className="movement" />MOVE tile</span><span><i className="cache" />ITEM CACHE — step onto it</span><span><i className="target" />Selected action target</span><span><i className="uplink" />Network uplink</span><span><i className="hostile" />Hostile process</span>
       </footer>
     </section>
   );
@@ -291,7 +292,7 @@ function IsometricTile({ position, map, view, movementKeys, targetsByPosition, c
     aria-label={label}
     tabIndex={actionable ? 0 : -1}
     data-board-action={actionable ? "true" : "false"}
-    className={`sc-iso-tile ${movement ? "is-movement" : ""} ${targeted ? "is-target" : ""}`}
+    className={`sc-iso-tile ${movement ? "is-movement" : ""} ${targeted ? "is-target" : ""} ${cache ? "has-cache" : ""}`}
     onClick={activate}
     onKeyDown={keyboardActivate}
     onMouseEnter={() => movement && onPreview(position)}
@@ -300,8 +301,9 @@ function IsometricTile({ position, map, view, movementKeys, targetsByPosition, c
     onBlur={() => onPreview(null)}
   >
     <polygon points={tileDiamondPoints(position)} />
+    {cache && <polygon className="sc-cache-outline" points={tileDiamondPoints(position)} />}
     {current && <polygon className="sc-current-outline" points={tileDiamondPoints(position)} />}
-    {movement && <><polygon className="sc-move-outline" points={tileDiamondPoints(position)} /><text className="sc-tile-symbol" x={point.x} y={point.y + 5}>＋</text></>}
+    {movement && <><polygon className="sc-move-outline" points={tileDiamondPoints(position)} /><text className="sc-tile-symbol" x={point.x} y={point.y + 3}>MOVE</text></>}
     {targeted && <><polygon className="sc-target-outline" points={tileDiamondPoints(position)} /><path className="sc-target-reticle" d={`M${point.x - 10} ${point.y}h20M${point.x} ${point.y - 10}v20`} /></>}
   </g>;
 }
@@ -334,11 +336,14 @@ function TileContents({ position, map, view, frontier, movingCharacterIds, movin
     {exit && <g transform={`translate(${point.x} ${point.y - 4})`} className={frontier ? "is-frontier" : ""}><UplinkSprite /></g>}
     {door && <g transform={`translate(${point.x} ${point.y - 8})`}><DoorSprite open={door.open} /></g>}
     {prop && <g transform={`translate(${point.x} ${point.y - 8})`}><PropSprite kind={prop.kind} /></g>}
-    {cache && <g transform={`translate(${point.x} ${point.y - 8})`}><CacheSprite /></g>}
+    {cache && <g transform={`translate(${point.x} ${point.y - 8})`} className="sc-cache-entity"><CacheSprite /><g className="sc-cache-nameplate" aria-hidden="true"><rect x="-34" y="-29" width="68" height="13" rx="2" /><text x="0" y="-20">ITEM CACHE</text></g></g>}
     {hazard && <g className="sc-corruption-hazard" role="img" aria-label={`Corruption hazard, expires after round ${hazard.expiresAfterRound}`}><circle cx={point.x} cy={point.y - 3} r="11" /><path d={`M${point.x - 8} ${point.y - 3}h16M${point.x} ${point.y - 11}v16`} /></g>}
-    {enemies.map((enemy, index) => <g key={enemy.id} transform={`translate(${point.x - 16 + index * 12} ${point.y - 42}) scale(${enemy.definitionId === "legacy-system" ? 1.18 : 0.82})`}>
-      <EnemySprite definitionId={enemy.definitionId} displayName={enemy.displayName} damaged={damagedIds.has(enemy.id)} acting={movingEnemyIds.has(enemy.id) || actingEnemyIds.has(enemy.id)} />
-      <HealthPip x={16} y={37} value={enemy.hp} max={enemy.maxHp} hostile />
+    {enemies.map((enemy, index) => <g key={enemy.id} className="sc-enemy-entity">
+      <g transform={`translate(${point.x - 16 + index * 12} ${point.y - 42}) scale(${enemy.definitionId === "legacy-system" ? 1.18 : 0.82})`}>
+        <EnemySprite definitionId={enemy.definitionId} displayName={enemy.displayName} damaged={damagedIds.has(enemy.id)} acting={movingEnemyIds.has(enemy.id) || actingEnemyIds.has(enemy.id)} />
+        <HealthPip x={16} y={37} value={enemy.hp} max={enemy.maxHp} hostile />
+      </g>
+      <g className="sc-enemy-nameplate" transform={`translate(${point.x + index * 12} ${point.y - 55 - index * 12})`} aria-hidden="true"><rect x="-68" y="-10" width="136" height="14" rx="2" /><text x="0" y="0">{enemy.displayName.toUpperCase()}</text></g>
     </g>)}
     {characters.map((character, index) => <g key={character.id} transform={`translate(${point.x - 12 + index * 12} ${point.y - 39}) scale(.82)`}>
       <CharacterSprite classId={character.classId} displayName={character.displayName} current={character.id === view.activeCharacterId} damaged={damagedIds.has(character.id) || character.hp <= character.maxHp / 3} downed={character.downed} acting={movingCharacterIds.has(character.id)} />

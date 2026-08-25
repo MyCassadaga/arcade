@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SYSTEM_CRAWL_MAPS_BY_ID,
   getReachableMovementTiles,
+  getValidAttackTargets,
   getValidAbilityTargets,
   getValidItemTargets,
   hasLineOfSight,
@@ -148,6 +149,41 @@ describe("System Crawl movement, caches, and turn rules", () => {
     state.turn.actedCharacterIdsThisRound = [];
     const rebooted = reduceSystemCrawl(state, { type: "end_turn", characterId: character.id }, character.ownerPlayerId).state;
     expect(rebooted.characters[character.id]?.lastActionKey).toBeNull();
+  });
+
+  it("gives every class a one-damage adjacent Attack and alternates it like other actions", () => {
+    let state = activateClass(startedState(1), "infrastructure-architect");
+    const character = characterByClass(state, "infrastructure-architect");
+    place(character, 0, 2, 3);
+    state = replaceEnemies(state, [
+      { definitionId: "scope-creep", position: { cardIndex: 0, x: 3, y: 3 }, hp: 5 },
+      { definitionId: "meeting", position: { cardIndex: 0, x: 5, y: 3 }, hp: 5 }
+    ]);
+    const [adjacent, distant] = Object.values(state.enemies);
+    if (!adjacent || !distant) throw new Error("Expected attack targets");
+    expect(getValidAttackTargets(state, character.id)).toEqual([{ type: "enemy", enemyId: adjacent.id }]);
+
+    state = reduceSystemCrawl(state, {
+      type: "attack",
+      characterId: character.id,
+      target: { type: "enemy", enemyId: adjacent.id }
+    }, character.ownerPlayerId).state;
+    expect(state.enemies[adjacent.id]?.hp).toBe(4);
+    expect(state.turn?.actionUsed).toBe(true);
+    expect(state.characters[character.id]?.lastActionKey).toBe("system:attack");
+    expect(state.events.some((event) => event.type === "character_attacked" && event.data.enemyId === adjacent.id)).toBe(true);
+
+    state.turn = { movementAllowance: 3, movementSpent: 0, actionUsed: false, actionBlocked: false, freeItemUsed: false, actedCharacterIdsThisRound: [] };
+    expect(() => reduceSystemCrawl(state, {
+      type: "attack",
+      characterId: character.id,
+      target: { type: "enemy", enemyId: adjacent.id }
+    }, character.ownerPlayerId)).toThrow(expect.objectContaining({ code: "repeated_action" }));
+    expect(() => reduceSystemCrawl(state, {
+      type: "attack",
+      characterId: character.id,
+      target: { type: "enemy", enemyId: distant.id }
+    }, character.ownerPlayerId)).toThrow(expect.objectContaining({ code: "repeated_action" }));
   });
 
   it("exports authoritative presentation selectors and applies door and prop line-of-sight metadata", () => {

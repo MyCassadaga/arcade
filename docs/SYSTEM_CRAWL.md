@@ -4,7 +4,7 @@ System Crawl is Team Arcade's cooperative, server-authoritative IT dungeon crawl
 
 ## Core rules
 
-Each living character receives one turn per round. During a turn, movement may be split around one normal action. The same non-movement action cannot be used on consecutive turns; ending a turn without acting performs a Reboot and clears that lock. After all living characters act, revealed enemies activate in stable order. Entering the frontier exit reveals the next card. A character at 0 HP is downed and may be restored by an adjacent ally's Restart User action. The party wins by defeating the incident boss on card four and loses when everyone is down with no Known Good Backup available.
+Each living character receives one turn per round. During a turn, movement may be split around one normal action. Every class can use Attack to deal 1 damage to an adjacent enemy; class abilities are deliberately stronger or more flexible through extra damage, range, healing, movement, or control. The same non-movement action cannot be used on consecutive turns; ending a turn without acting performs a Reboot and clears that lock. After all living characters act, revealed enemies activate in stable order. Entering the frontier exit reveals the next card. A character at 0 HP is downed and may be restored by an adjacent ally's Restart User action. The party wins by defeating the incident boss on card four and loses when everyone is down with no Known Good Backup available.
 
 The four classes are Infrastructure Architect (tank/control), Senior Systems Analyst (support/control), Application Developer (ranged damage), and IT Generalist (mobility/flexibility). Class and ability values live in `packages/games/src/system-crawl/content/classes.ts`.
 

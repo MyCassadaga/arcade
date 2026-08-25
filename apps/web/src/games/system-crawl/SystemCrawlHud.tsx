@@ -35,11 +35,20 @@ export function SystemCrawlHud(props: HudProps) {
 
     {view.phase === "resolving_choice" && view.pendingChoice ? <GoogleChoice view={view} players={players} selfId={selfId} commandReady={commandReady} sendGame={sendGame} /> : selected ? <AbilityPanel view={view} character={selected} ownsCurrent={ownsCurrent} commandReady={commandReady} selection={selection} onSelection={onSelection} sendGame={sendGame} /> : null}
 
-    {active && <button className="sc-command sc-end-turn" type="button" disabled={!commandReady || !ownsCurrent || view.phase !== "player_turn"} onClick={() => sendGame({ type: "end_turn", characterId: active.id })}>{view.turn?.actionUsed ? "End Turn" : "End Turn and Reboot Abilities"}</button>}
+    {active && <button className="sc-command sc-end-turn" type="button" disabled={!commandReady || !ownsCurrent || view.phase !== "player_turn"} onClick={() => sendGame({ type: "end_turn", characterId: active.id })}>{view.turn?.actionUsed ? "End Turn" : "End Turn and Reboot"}</button>}
     {!ownsCurrent && view.phase === "player_turn" && active && <p className="sc-waiting" role="status">Waiting for {playerName(players, active.ownerPlayerId)} to control {active.displayName}.</p>}
+    <ThreatStatus view={view} />
     <PartyStatus view={view} players={players} selfId={selfId} />
     <EventLog events={view.events} compact />
   </aside>;
+}
+
+function ThreatStatus({ view }: { view: SystemCrawlViewerState }) {
+  const enemies = Object.values(view.enemies).filter((enemy) => enemy.hp > 0)
+    .sort((left, right) => left.position.cardIndex - right.position.cardIndex || left.displayName.localeCompare(right.displayName));
+  return <section className="sc-threat-status" aria-labelledby="sc-threats-title"><header><h3 id="sc-threats-title">Visible threats</h3><span>{enemies.length} ACTIVE</span></header>
+    {enemies.length ? <div>{enemies.map((enemy) => <div key={enemy.id}><i /><span><strong>{enemy.displayName}</strong><small>Node {enemy.position.cardIndex + 1}</small></span><b>{enemy.hp}/{enemy.maxHp} HP</b></div>)}</div> : <p>No hostile processes are currently visible.</p>}
+  </section>;
 }
 
 function GoogleChoice({ view, players, selfId, commandReady, sendGame }: { view: SystemCrawlViewerState; players: PlayerView[]; selfId: string; commandReady: boolean; sendGame: (command: SystemCrawlCommand) => boolean }) {

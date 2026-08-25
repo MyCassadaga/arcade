@@ -115,6 +115,13 @@ export const systemCrawlCommandSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("attack"),
+      characterId: systemCrawlEntityIdSchema,
+      target: z.object({ type: z.literal("enemy"), enemyId: systemCrawlEntityIdSchema }).strict()
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("use_ability"),
       characterId: systemCrawlEntityIdSchema,
       abilityId: z.enum(SYSTEM_CRAWL_ABILITY_IDS),

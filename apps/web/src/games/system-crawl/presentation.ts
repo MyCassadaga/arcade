@@ -46,6 +46,7 @@ export function eventAnnouncement(event: SystemCrawlEvent): string {
   if (event.type === "defeat") return "Defeat. The incident remains unresolved.";
   if (event.type === "round_started") return `Round ${event.round} started.`;
   if (event.type === "enemy_phase_started") return "System phase started.";
+  if (event.type === "character_attacked") return `${player} attacked a hostile process.`;
   if (event.type === "enemy_phase_skipped") return "The Maintenance Window was approved. Hostile processes paused.";
   if (event.type === "technical_debt_grew") return "Technical Debt increased.";
   if (event.type === "additional_requests_spawned") return "Stakeholder Feedback generated additional requests.";
@@ -64,6 +65,7 @@ export function eventAnnouncement(event: SystemCrawlEvent): string {
 
 export function readableActionKey(actionKey: string | null): string {
   if (!actionKey) return "None — all actions rebooted";
+  if (actionKey === "system:attack") return "Attack";
   const [, id = actionKey] = actionKey.split(":");
   return id.split("-").map(capitalize).join(" ");
 }

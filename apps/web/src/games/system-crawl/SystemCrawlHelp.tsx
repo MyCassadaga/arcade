@@ -67,7 +67,7 @@ export function SystemCrawlHelp({ phase }: { phase: SystemCrawlPhase }) {
         <div className="sc-help-content">
           <section aria-labelledby="sc-tutorial-title"><h3 id="sc-tutorial-title">Eight-step tutorial</h3><ol>{tutorialSteps.map((step) => <li key={step}>{step}</li>)}</ol></section>
           <section aria-labelledby="sc-core-rules"><h3 id="sc-core-rules">Core loop</h3><dl>
-            <div><dt>Turn</dt><dd>Move in one or more segments, then take one action in either order.</dd></div>
+            <div><dt>Turn</dt><dd>Move in one or more segments, then Attack or use one stronger class or item action in either order.</dd></div>
             <div><dt>Alternation</dt><dd>Your last non-movement action is locked next turn. Reboot by ending a turn without acting.</dd></div>
             <div><dt>Items</dt><dd>Carry one. Action items replace an action; free and passive items say when they apply.</dd></div>
             <div><dt>Downed</dt><dd>At 0 HP you stop acting. An adjacent ally may Restart User; everyone down means defeat unless a backup restores the party.</dd></div>
