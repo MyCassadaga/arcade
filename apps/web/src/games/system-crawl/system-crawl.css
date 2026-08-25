@@ -26,7 +26,7 @@
 .sc-terminal button:focus-visible, .sc-terminal [role="gridcell"]:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .sc-terminal button:disabled { cursor: not-allowed; opacity: .48; }
 .sc-terminal h1, .sc-terminal h2, .sc-terminal h3, .sc-terminal p { margin-top: 0; }
-.sc-incident-bar, .sc-setup__header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 1.2rem; align-items: center; padding: 1rem 1.2rem; border-bottom: 1px solid #17455c; background: rgba(5, 12, 24, .9); }
+.sc-incident-bar, .sc-setup__header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 1.2rem; align-items: center; padding: 1rem 1.2rem; border-bottom: 1px solid #17455c; background: rgba(5, 12, 24, .9); }.sc-incident-bar { position: relative; }
 .sc-incident-bar > div > span, .sc-setup__header > div > span, .sc-results__code { color: var(--sc-cyan); font-size: .66rem; font-weight: 900; letter-spacing: .13em; }
 .sc-incident-bar h1, .sc-setup__header h1 { margin: .25rem 0 0; color: #f3fdff; font-size: clamp(1rem, 1.7vw, 1.35rem); line-height: 1.15; }
 .sc-incident-bar dl { display: flex; gap: .45rem; margin: 0; }
@@ -37,7 +37,7 @@
 .sc-connection i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--sc-green); box-shadow: 0 0 9px var(--sc-green); }
 .sc-connection.reconnecting { color: var(--sc-amber); }.sc-connection.reconnecting i, .sc-connection.pending i { background: var(--sc-amber); box-shadow: 0 0 9px var(--sc-amber); }
 .sc-connection.disconnected, .sc-connection.error { color: #ff9ca7; }.sc-connection.disconnected i, .sc-connection.error i { background: var(--sc-red); box-shadow: 0 0 9px var(--sc-red); }
-.sc-network-notice { padding: .6rem 1rem; border-bottom: 1px solid #7e6325; background: #2d230c; color: #ffe7a2; font-size: .74rem; }
+.sc-network-notice { position: absolute; z-index: 22; top: 100%; right: 0; left: 0; padding: .6rem 1rem; border-bottom: 1px solid #7e6325; background: #2d230c; color: #ffe7a2; font-size: .74rem; box-shadow: 0 8px 18px rgba(0,0,0,.32); pointer-events: none; }
 .sc-system-phase { position: absolute; z-index: 20; left: 50%; margin-top: 4.5rem; padding: .8rem 2.1rem; border: 1px solid var(--sc-magenta); background: rgba(32, 5, 28, .95); box-shadow: 0 0 22px rgba(237, 78, 158, .45); text-align: center; transform: translateX(-50%); pointer-events: none; }
 .sc-system-phase span, .sc-system-phase small { display: block; }.sc-system-phase span { color: #fff; font-size: 1rem; font-weight: 950; letter-spacing: .22em; }.sc-system-phase small { margin-top: .25rem; color: #f4a1ce; font-size: .6rem; }
 .sc-game-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 380px); height: min(780px, calc(100dvh - 10rem)); min-height: 620px; }

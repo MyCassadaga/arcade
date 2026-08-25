@@ -118,6 +118,13 @@ describe("final System Crawl interface", () => {
     expect(container.querySelectorAll(".sc-owned-characters .sc-character-card")).toHaveLength(2);
   });
 
+  it("does not show a waiting-for-yourself message when a solo player inspects either operator", async () => {
+    const user = userEvent.setup();
+    renderScreen(projectSystemCrawlState(soloGameplay(), "host"), [hostPlayer]);
+    await user.click(screen.getByRole("button", { name: /Application Developer.*STANDBY/ }));
+    expect(screen.queryByText(/Waiting for Host to control/)).not.toBeInTheDocument();
+  });
+
   it("keeps non-owner, pending, and rejected-action controls safe", () => {
     const view = projectSystemCrawlState(twoPlayerGameplay(), "guest");
     const sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; });
@@ -126,12 +133,13 @@ describe("final System Crawl interface", () => {
     expect(screen.getByText(/Waiting for Host to control/)).toBeInTheDocument();
     const hostView = projectSystemCrawlState(soloGameplay(), "host");
     rerender(screenElement(hostView, [hostPlayer], sendGame, { commandPending: true }));
-    expect(screen.getByText(/Command pending — controls are locked/)).toBeInTheDocument();
+    expect(screen.getByText("COMMAND PENDING")).toBeInTheDocument();
+    expect(screen.queryByText(/Command pending — controls are locked/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /End Turn/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /End Turn/ }));
     expect(sendGame).not.toHaveBeenCalled();
     rerender(screenElement(hostView, [hostPlayer], sendGame, { status: "reconnecting" }));
-    expect(screen.getByText(/Reconnecting — the latest board remains available/)).toBeInTheDocument();
+    expect(screen.getByText(/Reconnecting — the latest board remains available/).closest(".sc-incident-bar")).toBeInTheDocument();
     rerender(screenElement(hostView, [hostPlayer], sendGame));
     expect(screen.getByRole("button", { name: "End Turn and Reboot" })).toBeEnabled();
     expect(screen.getAllByRole("gridcell", { name: /valid movement destination/i }).length).toBeGreaterThan(0);

@@ -36,7 +36,7 @@ export function SystemCrawlHud(props: HudProps) {
     {view.phase === "resolving_choice" && view.pendingChoice ? <GoogleChoice view={view} players={players} selfId={selfId} commandReady={commandReady} sendGame={sendGame} /> : selected ? <AbilityPanel view={view} character={selected} ownsCurrent={ownsCurrent} commandReady={commandReady} selection={selection} onSelection={onSelection} sendGame={sendGame} /> : null}
 
     {active && <button className="sc-command sc-end-turn" type="button" disabled={!commandReady || !ownsCurrent || view.phase !== "player_turn"} onClick={() => sendGame({ type: "end_turn", characterId: active.id })}>{view.turn?.actionUsed ? "End Turn" : "End Turn and Reboot"}</button>}
-    {!ownsCurrent && view.phase === "player_turn" && active && <p className="sc-waiting" role="status">Waiting for {playerName(players, active.ownerPlayerId)} to control {active.displayName}.</p>}
+    {active && active.ownerPlayerId !== selfId && view.phase === "player_turn" && <p className="sc-waiting" role="status">Waiting for {playerName(players, active.ownerPlayerId)} to control {active.displayName}.</p>}
     <ThreatStatus view={view} />
     <PartyStatus view={view} players={players} selfId={selfId} />
     <EventLog events={view.events} compact />
