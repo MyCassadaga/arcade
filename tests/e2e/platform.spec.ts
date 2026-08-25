@@ -109,6 +109,14 @@ test("solo System Crawl controls two characters through briefing and reconnect",
   await page.getByRole("button", { name: "Acknowledge and deploy" }).click();
   await expect(page.locator(".sc-owned-characters .sc-character-card")).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "System topology" })).toBeVisible();
+  const boardTop = await page.locator(".sc-board-console").evaluate((element) => element.getBoundingClientRect().top);
+  const firstOperator = await page.locator(".sc-incident-bar dd").nth(1).innerText();
+  await page.getByRole("gridcell", { name: /valid movement destination/i }).first().click();
+  await expect.poll(() => page.locator(".sc-board-console").evaluate((element) => element.getBoundingClientRect().top)).toBe(boardTop);
+  await page.getByRole("button", { name: "End Turn and Reboot" }).click();
+  await expect(page.locator(".sc-incident-bar dd").nth(1)).not.toHaveText(firstOperator);
+  await expect(page.locator(".sc-waiting")).toHaveCount(0);
+  await expect.poll(() => page.locator(".sc-board-console").evaluate((element) => element.getBoundingClientRect().top)).toBe(boardTop);
   await page.reload();
   await expect(page.locator(".sc-owned-characters .sc-character-card")).toHaveCount(2);
 });

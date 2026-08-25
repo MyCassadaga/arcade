@@ -105,8 +105,8 @@ function Adventure(props: SystemCrawlViewProps & { reducedMotion: boolean; effec
       <div><span>ACTIVE INCIDENT / PRODUCTION NETWORK</span><h1>{view.incidentId ? INCIDENT_DEFINITIONS[view.incidentId].displayTitle : "Crawl the system"}</h1></div>
       <dl><div><dt>Round</dt><dd>{view.round}</dd></div><div><dt>Current turn</dt><dd>{active?.displayName ?? "Resolving"}</dd></div><div><dt>Frontier</dt><dd>Node {view.revealedCardCount}/4</dd></div></dl>
       <ConnectionBadge status={status} pending={commandPending} />
+      {status !== "connected" && <div className="sc-network-notice" role="status">{status === "reconnecting" ? "Reconnecting — the latest board remains available while controls are paused." : "Offline — the latest board remains available while controls are paused."}</div>}
     </header>
-    {(status !== "connected" || commandPending) && <div className="sc-network-notice" role="status">{commandPending ? "Command pending — controls are locked until the server replies." : status === "reconnecting" ? "Reconnecting — the latest board remains available while controls are paused." : "Offline — the latest board remains available while controls are paused."}</div>}
     {(view.phase === "enemy_phase" || effects.systemPhase) && <div className="sc-system-phase" role="status"><span>SYSTEM PHASE</span><small>Hostile processes executing authoritative events</small></div>}
     <div className="sc-live-region sr-only" aria-live="assertive" aria-atomic="true">{effects.announcement} {active ? `Current turn: ${active.displayName}.` : ""}</div>
     <main className="sc-game-layout">
