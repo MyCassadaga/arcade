@@ -148,7 +148,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
   };
 
   return (
-    <main className="lobby-shell">
+    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""}`}>
       <header className="lobby-header">
         <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); leave(); }} aria-label="Leave room and return home">
           <span>TA</span><strong>Team Arcade</strong>

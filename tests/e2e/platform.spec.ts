@@ -20,6 +20,7 @@ test("two players synchronize a System Crawl move and ability across desktop and
   const host = await hostContext.newPage();
   const guest = await guestContext.newPage();
   try {
+    await guest.setViewportSize({ width: 390, height: 844 });
     await host.goto("/");
     await host.getByLabel("Display name").fill("Crawl Host");
     await host.getByRole("button", { name: "Create game" }).click();
@@ -47,32 +48,43 @@ test("two players synchronize a System Crawl move and ability across desktop and
     await expect(guest.getByText(/Waiting for the host to acknowledge/)).toBeVisible();
     await host.getByRole("button", { name: "Acknowledge and deploy" }).click();
     await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "System topology" })).toBeVisible()));
+    await expect(host.getByRole("heading", { name: "Visible threats" })).toBeVisible();
+    await expect(host.getByText(/ITEM CACHE — step onto it/)).toBeVisible();
+    expect(await host.locator(".sc-cache-entity").evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+    await expectStableViewport(host);
 
-    await expect(host.locator(".sc-incident-bar dd").nth(1)).toHaveText("Application Developer");
-    const destination = host.getByRole("gridcell", { name: /valid movement destination/i }).first();
+    const firstClass = await host.locator(".sc-incident-bar dd").nth(1).innerText();
+    const firstPage = firstClass === "Application Developer" ? host : guest;
+    const secondPage = firstPage === host ? guest : host;
+    await expectStableViewport(host);
+    await expectStableViewport(guest);
+    const destination = firstPage.getByRole("gridcell", { name: /valid movement destination/i }).first();
     await destination.click();
-    await Promise.all([host, guest].map((page) => expect(page.getByText("character moved", { exact: true })).toBeVisible()));
+    await Promise.all([host, guest].map((page) => expect(page.getByText("character moved", { exact: true })).toHaveCount(1)));
 
-    await host.getByRole("button", { name: /Works on My Machine/ }).click();
-    await host.getByRole("gridcell", { name: /valid works on my machine target/i }).click();
-    await Promise.all([host, guest].map((page) => expect(page.getByText("ability used", { exact: true })).toBeVisible()));
-    await expect(host.getByRole("button", { name: "End Turn" })).toBeEnabled();
-    await expect(guest.getByRole("button", { name: /End Turn/ })).toBeDisabled();
-    await host.getByRole("button", { name: "End Turn" }).click();
+    const abilityName = firstClass === "Application Developer" ? /Works on My Machine/ : /Firewall/;
+    const targetName = firstClass === "Application Developer" ? /valid works on my machine target/i : /valid firewall target/i;
+    await firstPage.getByRole("button", { name: abilityName }).click();
+    await firstPage.getByRole("gridcell", { name: targetName }).first().click();
+    await Promise.all([host, guest].map((page) => expect(page.getByText("ability used", { exact: true })).toHaveCount(1)));
+    await expectStableViewport(firstPage);
+    await expect(firstPage.getByRole("button", { name: "End Turn" })).toBeEnabled();
+    await expect(secondPage.getByRole("button", { name: /End Turn/ })).toBeDisabled();
+    await firstPage.getByRole("button", { name: "End Turn" }).click();
 
-    await guest.setViewportSize({ width: 390, height: 844 });
-    await expect(guest.locator(".sc-incident-bar dd").nth(1)).toHaveText("Infrastructure Architect");
+    await expect(secondPage.locator(".sc-incident-bar dd").nth(1)).not.toHaveText(firstClass);
     await expect(guest.locator(".sc-board-console")).toBeVisible();
     await expect(guest.locator(".sc-hud")).toBeVisible();
-    await expect(guest.getByRole("button", { name: "End Turn and Reboot Abilities" })).toBeEnabled();
+    await expect(secondPage.getByRole("button", { name: "End Turn and Reboot" })).toBeEnabled();
     expect(await guest.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    await guest.getByRole("button", { name: "End Turn and Reboot Abilities" }).click();
+    await expectStableViewport(guest);
+    await secondPage.getByRole("button", { name: "End Turn and Reboot" }).click();
     await Promise.all([host, guest].map((page) => expect(page.locator(".sc-incident-bar dd").first()).toHaveText("2")));
 
     await guest.reload();
     await expect(guest.getByRole("heading", { name: "System topology" })).toBeVisible();
     await expect(guest.locator(".sc-incident-bar dd").first()).toHaveText("2");
-    await expect(guest.getByText("Application Developer", { exact: true }).first()).toBeVisible();
+    await expect(guest.getByRole("img", { name: /Application Developer.*character sprite/ })).toBeVisible();
     await expect(guest.locator(".sc-incident-bar dd").nth(1)).toHaveText(await host.locator(".sc-incident-bar dd").nth(1).innerText());
   } finally {
     await Promise.all([hostContext.close(), guestContext.close()]);
@@ -255,4 +267,11 @@ function requiredPage(pages: Page[], index: number): Page {
 async function reloadAtHeading(page: Page, name: string): Promise<void> {
   await page.reload();
   await expect(page.getByRole("heading", { name })).toBeVisible();
+}
+
+async function expectStableViewport(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+  await expect.poll(() => page.locator(".system-crawl-room").evaluate((element) => element.scrollTop)).toBe(0);
+  expect(await page.locator(".system-crawl-room").evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
 }

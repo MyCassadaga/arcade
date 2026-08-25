@@ -228,6 +228,7 @@ export interface SystemCrawlEvent {
     | "item_cache_spawned"
     | "item_picked_up"
     | "item_discarded"
+    | "character_attacked"
     | "ability_used"
     | "item_used"
     | "damage_dealt"
@@ -364,6 +365,7 @@ export type SystemCrawlAction =
   | { type: "start_adventure"; seed: string | number }
   | { type: "continue_briefing" }
   | { type: "move_to"; characterId: string; destination: Position }
+  | { type: "attack"; characterId: string; target: EnemyTarget }
   | { type: "use_ability"; characterId: string; abilityId: SystemCrawlAbilityId; target?: SystemCrawlTarget }
   | { type: "use_item"; characterId: string; target?: SystemCrawlTarget }
   | { type: "restart_user"; characterId: string; targetCharacterId: string }

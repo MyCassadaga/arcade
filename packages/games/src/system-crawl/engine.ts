@@ -127,6 +127,9 @@ export function reduceSystemCrawl(
     case "move_to":
       next = moveCharacter(state, actorPlayerId, action.characterId, action.destination);
       break;
+    case "attack":
+      next = attackEnemy(state, actorPlayerId, action.characterId, action.target);
+      break;
     case "use_ability":
       next = useAbility(state, actorPlayerId, action.characterId, action.abilityId, action.target);
       break;
@@ -325,6 +328,26 @@ function useAbility(
     next.abilityHistory = next.abilityHistory.slice(-40);
   }
   if (next.phase !== "victory" && next.phase !== "defeat" && next.characters[characterId]?.downed) finishCharacterTurn(next, characterId);
+  return next;
+}
+
+function attackEnemy(
+  state: SystemCrawlState,
+  actorPlayerId: string,
+  characterId: string,
+  target: Extract<SystemCrawlTarget, { type: "enemy" }>
+): SystemCrawlState {
+  const character = requireActionAvailable(state, actorPlayerId, characterId, "system:attack");
+  requireEnemyTarget(state, character, target, 1);
+  const next = cloneState(state);
+  emit(next, "character_attacked", {
+    characterId,
+    enemyId: target.enemyId,
+    playerDisplayName: playerDisplayNameForCharacter(next, characterId),
+    damage: 1
+  });
+  damageEnemyFromAction(next, characterId, target.enemyId, 1);
+  completeAction(next, characterId, "system:attack");
   return next;
 }
 
@@ -1566,7 +1589,7 @@ function requireActionAvailable(
   }
   if (character.lastActionKey === actionKey) {
     const abilityId = actionKey.startsWith("ability:") ? actionKey.slice("ability:".length) : null;
-    if (character.statuses.repeatOverrideAbilityId !== abilityId) {
+    if (!abilityId || character.statuses.repeatOverrideAbilityId !== abilityId) {
       throw new SystemCrawlRuleError("repeated_action", "A character cannot repeat its previous non-movement action.");
     }
   }

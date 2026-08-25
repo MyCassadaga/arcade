@@ -93,7 +93,8 @@ function Adventure(props: SystemCrawlViewProps & { reducedMotion: boolean; effec
   const target = (selectedTarget: SystemCrawlTarget) => {
     if (!active || !selection || !commandReady) return;
     let sent = false;
-    if (selection.kind === "ability") sent = sendGame({ type: "use_ability", characterId: active.id, abilityId: selection.abilityId, target: selectedTarget });
+    if (selection.kind === "attack" && selectedTarget.type === "enemy") sent = sendGame({ type: "attack", characterId: active.id, target: selectedTarget });
+    else if (selection.kind === "ability") sent = sendGame({ type: "use_ability", characterId: active.id, abilityId: selection.abilityId, target: selectedTarget });
     else if (selection.kind === "item") sent = sendGame({ type: "use_item", characterId: active.id, target: selectedTarget });
     else if (selectedTarget.type === "character") sent = sendGame({ type: "restart_user", characterId: active.id, targetCharacterId: selectedTarget.characterId });
     if (sent) setSelection(null);

@@ -49,6 +49,7 @@ describe("shared protocol validation", () => {
       { type: "start_adventure" },
       { type: "continue_briefing" },
       { type: "move_to", characterId: "character:1", destination: position },
+      { type: "attack", characterId: "character:1", target: { type: "enemy", enemyId: "enemy:1" } },
       { type: "use_ability", characterId: "character:1", abilityId: "hotfix", target: { type: "enemy", enemyId: "enemy:1" } },
       { type: "use_ability", characterId: "character:1", abilityId: "load-balancer", target: { type: "load_balancer", characterId: "character:2", destination: position } },
       { type: "resolve_choice", choiceId: "choice:1", itemId: "coffee" },
@@ -79,6 +80,7 @@ describe("shared protocol validation", () => {
     expect(clientMessageSchema.safeParse(message({ type: "select_class", classIds: [] })).success).toBe(false);
     expect(clientMessageSchema.safeParse(message({ type: "select_class", classIds: ["not-a-class"] })).success).toBe(false);
     expect(clientMessageSchema.safeParse(message({ type: "move_to", characterId: "character:1", destination: { cardIndex: 4, x: 0, y: 0 } })).success).toBe(false);
+    expect(clientMessageSchema.safeParse(message({ type: "attack", characterId: "character:1", target: { type: "character", characterId: "character:2" } })).success).toBe(false);
     expect(clientMessageSchema.safeParse(message({ type: "use_ability", characterId: "character:1", abilityId: "delete-production" })).success).toBe(false);
     expect(clientMessageSchema.safeParse(message({ type: "resolve_choice", choiceId: "choice:1", itemId: "mystery" })).success).toBe(false);
   });
