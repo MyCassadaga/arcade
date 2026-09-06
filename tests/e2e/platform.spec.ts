@@ -11,6 +11,8 @@ test("entry and lobby primary actions remain usable on a phone-sized viewport", 
   await expect(page.getByRole("button", { name: "Copy invite link" })).toBeVisible();
   await expect(page.getByLabel("Share this link")).toHaveValue(/\?room=[A-HJ-NP-Z2-9]{5}$/u);
   await expect(page.getByRole("button", { name: /Who Said That/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Impostor/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /System Crawl/ })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
@@ -31,8 +33,7 @@ test("two players synchronize a System Crawl move and ability across desktop and
     await guest.getByRole("button", { name: "Join the fun" }).click();
     await Promise.all([host, guest].map((page) => expect(page.locator(".player-list li")).toHaveCount(2)));
 
-    await host.getByRole("button", { name: /System Crawl/ }).click();
-    await expect(guest.getByRole("button", { name: /System Crawl/ })).toHaveAttribute("aria-pressed", "true");
+    await selectHiddenGame(host, "system-crawl");
     await host.getByRole("button", { name: "Start game" }).click();
     await Promise.all([host, guest].map((page) => expect(page.getByRole("heading", { name: "Assemble the response team" })).toBeVisible()));
     await Promise.all([host, guest].map(async (page) => {
@@ -95,7 +96,7 @@ test("solo System Crawl controls two characters through briefing and reconnect",
   await page.goto("/");
   await page.getByLabel("Display name").fill("Solo Crawler");
   await page.getByRole("button", { name: "Create game" }).click();
-  await page.getByRole("button", { name: /System Crawl/ }).click();
+  await selectHiddenGame(page, "system-crawl");
   await page.getByRole("button", { name: "Start game" }).click();
   await expect(page.getByRole("heading", { name: "Assemble the response team" })).toBeVisible();
   const closeTutorial = page.getByRole("button", { name: "Close" });
@@ -282,4 +283,58 @@ async function expectStableViewport(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
   await expect.poll(() => page.locator(".system-crawl-room").evaluate((element) => element.scrollTop)).toBe(0);
   expect(await page.locator(".system-crawl-room").evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+}
+
+async function selectHiddenGame(page: Page, gameId: "system-crawl"): Promise<void> {
+  await expect(page.getByRole("heading", { name: "Choose a game" })).toBeVisible();
+  await page.evaluate(async (selectedGameId) => {
+    const roomCode = new URLSearchParams(window.location.search).get("room");
+    const storedSession = roomCode ? localStorage.getItem(`team-arcade:session:${roomCode}`) : null;
+    if (!roomCode || !storedSession) throw new Error("Missing host room session");
+
+    const session = JSON.parse(storedSession) as { sessionToken?: string };
+    if (!session.sessionToken) throw new Error("Missing host session token");
+
+    await new Promise<void>((resolve, reject) => {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${encodeURIComponent(roomCode)}/socket`);
+      const timeout = window.setTimeout(() => {
+        socket.close();
+        reject(new Error("Timed out selecting hidden game"));
+      }, 10_000);
+
+      const finish = (error?: Error) => {
+        window.clearTimeout(timeout);
+        socket.close();
+        if (error) reject(error);
+        else resolve();
+      };
+
+      socket.addEventListener("open", () => {
+        socket.send(JSON.stringify({
+          type: "room.reconnect",
+          requestId: crypto.randomUUID(),
+          payload: { sessionToken: session.sessionToken }
+        }));
+      });
+      socket.addEventListener("message", (event) => {
+        const message = JSON.parse(String(event.data)) as {
+          type?: string;
+          payload?: { selectedGameId?: string; message?: string };
+        };
+        if (message.type === "room.snapshot") {
+          socket.send(JSON.stringify({
+            type: "host.selectGame",
+            requestId: crypto.randomUUID(),
+            payload: { gameId: selectedGameId }
+          }));
+        } else if (message.type === "room.presence" && message.payload?.selectedGameId === selectedGameId) {
+          finish();
+        } else if (message.type === "error") {
+          finish(new Error(message.payload?.message ?? "Hidden game selection failed"));
+        }
+      });
+      socket.addEventListener("error", () => finish(new Error("Hidden game selection socket failed")));
+    });
+  }, gameId);
 }

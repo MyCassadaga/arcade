@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
-import { GAME_CATALOG } from "./catalog";
+import { GAME_CATALOG, PUBLIC_GAME_CATALOG } from "./catalog";
 
 describe("shared protocol validation", () => {
   it("normalizes valid room codes and rejects ambiguous characters", () => {
@@ -37,8 +37,14 @@ describe("shared protocol validation", () => {
       name: "System Crawl",
       description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",
       duration: "15–20 min",
-      playerRange: "1–4 players"
+      playerRange: "1–4 players",
+      availability: "hidden"
     });
+  });
+
+  it("publishes only public games in the arcade catalog", () => {
+    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor"]);
+    expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
   });
 
   it("runtime-validates every System Crawl action intent", () => {
