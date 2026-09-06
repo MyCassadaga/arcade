@@ -14,6 +14,6 @@ Use `docs/AI_ISSUE_WORKFLOW.md` as the **sole procedural authority** for this ta
 5. Follow `docs/AI_ISSUE_WORKFLOW.md` from orientation through release-ready handoff.
 6. If the repository profile enables a system-interaction map, use its impact index to load only relevant architecture sections, then verify material claims against current source.
 7. Keep the GitHub issue as the canonical product/decision/release record.
-8. Stop before any production/external write, production migration, protected-branch merge, or deployment unless separately authorized for the exact reviewed SHA as required by the workflow.
+8. Stop before any production/external write, production migration, protected-branch merge, or deployment unless explicitly authorized for the exact reviewed SHA as required by the workflow. If the repository profile says a merge/push automatically deploys, treat that merge and its deployment consequence as one coupled production-affecting action set rather than requesting an impossible merge-without-deploy checkpoint.
 
 Do not invent a parallel workflow, restore retired mandatory review loops from historical documents, or substitute primary-agent self-review when an independent reviewer is required.

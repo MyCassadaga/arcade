@@ -79,11 +79,11 @@ Determine and record, when repository evidence supports it:
 2. package/build system and tracked install/test/type/lint/build/preview commands;
 3. ordinary PR CI source/workflow;
 4. local, preview/staging, and production environment conventions;
-5. deployment mechanism and any deterministic deployment-identity evidence;
+5. deployment mechanism, whether merge/push and deployment are coupled or separate, the automatic-deploy trigger when applicable, and any deterministic deployment-identity evidence;
 6. persistent data stores;
 7. external providers/systems and external-write surfaces;
 8. repository-specific HIGH-risk domains;
-9. operations that must remain separately production-authorized; and
+9. production-affecting operations requiring explicit authorization, including which release actions are mechanically coupled and therefore must be authorized as one action set; and
 10. the canonical current architecture/interaction map, if one exists.
 
 Retain the portable model/reviewer section intact. Set `Status: INITIALIZED` only after this pass is complete. An already initialized profile does not need wholesale regeneration during a portable-core upgrade.

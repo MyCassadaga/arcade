@@ -19,7 +19,7 @@ A request for analysis alone remains read-only. An existing `Work issue X` autho
 1. Create or approve a GitHub issue that states the desired product outcome.
 2. Tell the primary agent `Work issue X`.
 3. Receive either one concrete blocker or a release-ready result.
-4. If ready, separately authorize any merge/deployment/production action using the exact reviewed head SHA when required by this workflow.
+4. If ready, separately authorize the production-affecting release action set using the exact reviewed head SHA when required by this workflow. Repository-specific mechanics determine whether merge and deployment are separate actions or one coupled action.
 
 The human owner does not need to relay reviewer output between tasks, approve routine intermediate steps, or operate a model state machine.
 
@@ -150,6 +150,7 @@ For `HIGH` work that may require a production migration, provider/configuration 
 - current provider/runtime limits, atomicity and failure semantics, response/result semantics, and fail-closed size or scale bounds;
 - concurrency, retry, partial-failure, rollback, and action-time pre/postcondition behavior;
 - merge method and whether it preserves the exact reviewed SHA;
+- whether merge/push and deployment are **separate or coupled** in this repository, including the exact branch/event that triggers an automatic production deployment when applicable;
 - deployment-identity evidence and bounded smoke/postcheck behavior; and
 - every credential, configuration, traffic, maintenance, or cleanup action the release would actually require.
 
@@ -409,20 +410,24 @@ Code/backend changes:
 Data/schema/migration changes:
 Provider/configuration/secret/external effects:
 Release mechanics / reviewed-SHA preservation:
-Proposed authorized action set: None | migration / merge method / deploy / postchecks / cleanup
+Proposed authorized action set: None | migration / merge+auto-deploy / merge / deploy / postchecks / cleanup
 Optional refusal diagnostic: None | exact reviewed identity, trigger, target, read/output bounds, execution limit
 Deferred risks / accepted BACKLOG / follow-up issues:
 Immediate production impact:
 Rollback:
 Post-deployment smoke checks:
 Production actions performed: None
-Next action: human release authority may separately authorize the next production step for exact SHA <sha>.
+Next action: human release authority may authorize the next production-affecting action set for exact SHA <sha>.
 ```
 
 The task response should not duplicate the whole packet. Report issue/PR, risk lane, reviewed head SHA, independent decision, production actions performed, and the canonical record link. When the release sequence is concrete and ready for authorization, include the concise exact-SHA action request in this same response. Do not make the human ask a second time to see the proposed release steps. If an action remains unresolved, state the exact blocker rather than requesting blanket authority. Then stop before any unapproved action.
 
-When the complete release sequence is already known, request one concise exact-SHA authorization that enumerates the action-scoped set: migration or provider action, exact merge method, deployment target, bounded postchecks, and reviewed cleanup as applicable. The human may authorize all or only a subset. Do not serialize separate permission prompts merely because the actions occur sequentially.
+When the complete release sequence is already known, request one concise exact-SHA authorization that enumerates the action-scoped set: migration or provider action, exact merge method, deployment target or automatic deployment consequence, bounded postchecks, and reviewed cleanup as applicable. The human may authorize all or only a subset. Do not serialize separate permission prompts merely because the actions occur sequentially.
+
+**Coupled release mechanics:** repositories differ. In some repositories, merging or pushing to a designated branch automatically triggers production deployment through a provider or CI integration. In that case, merge and deployment are one coupled production-affecting action for authorization purposes. The agent must not request, promise, or perform an impossible intermediate state such as “merge without deploy.” The authorization request must explicitly state that the authorized merge/push will trigger production deployment and must include the resulting deployment target and bounded verification. In repositories where deployment is not automatic, merge and deployment remain independently authorizable actions. If coupling is `UNKNOWN — VERIFY`, release is blocked until it is verified.
+
+The active repository profile must record the coupling model and trigger. Portable workflow files must not assume either model.
 
 Determine exact-SHA-preserving merge mechanics before release readiness. If the ordinary merge method would create a different commit, either review that resulting commit or include the reviewed exact-SHA-preserving method in the authorization request. Authorization binds both the exact reviewed SHA and the listed actions; a code/procedure change requires fresh exact-SHA review and authorization.
 
-`Ready`, `authorized`, `merged`, `deployed`, and `verified` are distinct states. Independent `PASS` establishes release readiness only. Separate exact-SHA authorization permits the next production step. Deployment identity and bounded smoke evidence establish deployment and verification according to `docs/AI_REPO_PROFILE.md`.
+`Ready`, `authorized`, `merged`, `deployed`, and `verified` remain distinct state labels even when some state transitions are mechanically coupled. Independent `PASS` establishes release readiness only. Exact-SHA authorization permits the listed production-affecting action set. When an authorized merge automatically triggers deployment, the merge may transition the release from `authorized` through `merged` to `deployed` without a second human checkpoint; deployment identity and bounded smoke evidence still establish what actually reached production and whether verification passed according to `docs/AI_REPO_PROFILE.md`.

@@ -44,6 +44,7 @@
 - **Preview/staging environment(s):** `UNKNOWN — VERIFY`
 - **Production environment:** `UNKNOWN — VERIFY`
 - **Deployment mechanism:** `UNKNOWN — VERIFY`
+- **Merge/deployment coupling:** `UNKNOWN — VERIFY` — record `COUPLED` when a merge/push automatically triggers production deployment, `SEPARATE` when deployment requires a distinct action, and the exact triggering branch/event when known.
 - **Deployment identity / verification method:** `UNKNOWN — VERIFY`
 - **Post-deployment smoke-check location or runbook:** `UNKNOWN — VERIFY`
 
@@ -71,6 +72,7 @@
 - **Provider/runtime limits and result semantics that release tooling must verify:** `UNKNOWN — VERIFY`
 - **Authenticated operator path and any repository-defined access gate:** `UNKNOWN — VERIFY`
 - **Merge method and exact reviewed-SHA preservation:** `UNKNOWN — VERIFY`
+- **Merge/deployment coupling and automatic-deploy trigger:** `UNKNOWN — VERIFY`
 - **Deployment identity and postcheck evidence:** `UNKNOWN — VERIFY`
 - **Reusable read-only production diagnostic boundary, if any:** `UNKNOWN — VERIFY`
 

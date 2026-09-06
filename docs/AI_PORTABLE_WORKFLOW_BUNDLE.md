@@ -1,6 +1,6 @@
 # Portable AI Workflow Bundle
 
-Revision: **2026-09-06 — bounded autonomy**. Manifest format and target paths remain unchanged.
+Revision: **2026-09-06 — bounded autonomy + coupled release mechanics**. Manifest format and target paths remain unchanged.
 
 This repository keeps one reusable workflow core and one repository-specific profile. The portable core can be packaged once, staged beside another repository, and installed there without carrying source-repository facts into the target.
 
@@ -45,7 +45,7 @@ If a prior profile or map was overwritten and cannot be recovered from the worki
 
 ## Portability invariant
 
-Only `docs/AI_REPO_PROFILE.md` should require meaningful repository customization. `AGENTS.md`, the procedural workflow, reviewer definitions, skills, templates, and this bundle contract remain provider- and product-neutral. Repository-specific commands, environments, providers, protected domains, and production boundaries belong in the active profile.
+Only `docs/AI_REPO_PROFILE.md` should require meaningful repository customization. `AGENTS.md`, the procedural workflow, reviewer definitions, skills, templates, and this bundle contract remain provider- and product-neutral. Repository-specific commands, environments, providers, protected domains, production boundaries, and merge/deployment coupling belong in the active profile. A portable core must support both automatic merge-to-production deployment and separately triggered deployment without assuming either model.
 
 ## Upgrade boundary for an active release
 

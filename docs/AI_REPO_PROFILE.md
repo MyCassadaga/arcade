@@ -6,7 +6,7 @@
 
 - **Status:** `INITIALIZED`
 - **Repository:** Team Arcade (`MyCassadaga/arcade`)
-- **Default/protected branch:** `main` is the local `origin/HEAD` default and the CI production-deploy branch; GitHub branch-protection settings are `UNKNOWN — VERIFY`.
+- **Default/protected branch:** `main` is the local `origin/HEAD` default, the tracked CI production-deploy branch, and the branch observed to trigger the external automatic Cloudflare deployment; GitHub branch-protection settings are `UNKNOWN — VERIFY`.
 - **Human release authority:** `UNKNOWN — VERIFY` (repository owner/maintainers are not identified by tracked files).
 - **Issue tracker:** GitHub repository workflow; whether GitHub Issues is enabled is `UNKNOWN — VERIFY`.
 
@@ -53,8 +53,9 @@
 - **Local environment:** Wrangler local development at `http://localhost:8787` with project-local Durable Object state under `.wrangler/state`; optional Vite HMR at `http://localhost:5173` proxies to Wrangler.
 - **Preview/staging environment(s):** No tracked preview/staging deployment is configured. Pull requests run validation and `wrangler deploy --dry-run`; any external preview environment is `UNKNOWN — VERIFY`.
 - **Production environment:** Cloudflare Worker named `team-arcade`, with static assets and the `ROOMS` Durable Object binding; account and deployed URL/domain are `UNKNOWN — VERIFY`.
-- **Deployment mechanism:** Gated GitHub Actions deploy on pushes to `main` when `CLOUDFLARE_DEPLOY_ENABLED == true`, after validation/E2E; manual `npm run deploy` is also documented.
-- **Deployment identity / verification method:** GitHub Actions identifies the source commit and Wrangler reports deployment output, but no tracked procedure proves an exact Git SHA-to-Cloudflare deployment identity; `UNKNOWN — VERIFY`.
+- **Deployment mechanism:** A Cloudflare-side integration automatically deploys the `team-arcade` Worker after merges/pushes to `main`, independently of the tracked GitHub Actions deploy job. The tracked job also deploys on `main` when `CLOUDFLARE_DEPLOY_ENABLED == true`, after validation/E2E; manual `npm run deploy` remains available.
+- **Merge/deployment coupling:** `COUPLED` — merging or pushing to `main` triggers the external automatic Cloudflare production deployment. Treat authorization to merge to `main` and that automatic deployment consequence as one production-affecting action set.
+- **Deployment identity / verification method:** Cloudflare deployment history records the resulting Wrangler version, and GitHub identifies the merge commit, but no tracked procedure deterministically maps an exact Git SHA to the Cloudflare version; `UNKNOWN — VERIFY`.
 - **Post-deployment smoke-check location or runbook:** `UNKNOWN — VERIFY`; no tracked production smoke-check procedure was found.
 
 ## Data stores and persistent state
@@ -82,7 +83,7 @@
 ## Production / external-write boundaries
 
 - `Work issue X` alone authorizes no production access, mutation, provider write, live configuration/secret change, production migration, protected-branch merge, or deployment.
-- Repository-specific separately authorized operations: any production Cloudflare read/write, `wrangler` deployment/login, Durable Object data inspection or deletion, Worker migration, GitHub environment secret/variable change, custom-domain/DNS change, protected-branch merge, or CI/manual production deployment.
+- Repository-specific production-affecting operations requiring explicit authorization: any production Cloudflare read/write, `wrangler` deployment/login, Durable Object data inspection or deletion, Worker migration, GitHub environment secret/variable change, custom-domain/DNS change, the coupled `main` merge/push plus automatic Cloudflare deployment, or a distinct CI/manual production deployment.
 - Environment-targeting hazards or prohibited ambiguous commands: treat `npm run deploy`, `npx wrangler deploy`, `npx wrangler login`, Cloudflare dashboard/API operations, and GitHub production-environment changes as external/production actions unless an exact safe target and separate authority are established. `npm run deploy:dry-run` is the repository's non-deploying validation command. Delete `.wrangler/state` only when explicitly intending to reset project-local state.
 
 ## Release mechanics and platform constraints
@@ -90,7 +91,8 @@
 - **Historically reachable production-state compatibility:** Preserve compatibility with active room SQLite/persisted game JSON and hibernating WebSocket attachments for the documented 12-hour room lifetime; `wrangler.jsonc` currently declares Durable Object SQLite migration tag `v1`.
 - **Provider/runtime limits and result semantics that release tooling must verify:** Room capacity is 12; WebSocket messages are bounded to 4,096 bytes; static assets and the `ROOMS` binding ship with the Worker; deployment success/URL/version must be taken from the exact Wrangler result. Cloudflare account-specific limits are `UNKNOWN — VERIFY`.
 - **Authenticated operator path and any repository-defined access gate:** Local deployment uses an external `npx wrangler login`; CI uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub `production` environment and the `CLOUDFLARE_DEPLOY_ENABLED` repository variable. Actual environment reviewers are `UNKNOWN — VERIFY`.
-- **Merge method and exact reviewed-SHA preservation:** `UNKNOWN — VERIFY`; tracked files do not define the GitHub merge strategy or branch-protection rules.
+- **Merge method and exact reviewed-SHA preservation:** A GitHub merge commit guarded by the reviewed head SHA preserves that reviewed commit as a parent, while producing a distinct merge SHA; tracked files do not define allowed merge strategies or branch-protection rules.
+- **Merge/deployment coupling and automatic-deploy trigger:** `COUPLED` — a merge/push to `main` was observed to create a Cloudflare Wrangler deployment even while the tracked GitHub Actions `deploy` job was skipped. Release authorization must cover the merge and automatic production deployment together, followed by bounded verification.
 - **Deployment identity and postcheck evidence:** `UNKNOWN — VERIFY`; no tracked exact-SHA deployment receipt or production postcheck procedure exists.
 - **Reusable read-only production diagnostic boundary, if any:** None defined. Any production read requires separate, bounded authorization.
 
