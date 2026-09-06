@@ -1,0 +1,5 @@
+# Portable workflow project configuration.
+# Intentionally does NOT pin the primary model; the model selected for the main Codex session remains the primary implementer.
+
+[agents]
+enabled = true
