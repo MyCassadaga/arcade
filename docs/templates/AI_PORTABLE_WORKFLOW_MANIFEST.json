@@ -1,0 +1,71 @@
+{
+  "formatVersion": 1,
+  "installMode": "staged-fail-closed",
+  "entries": [
+    {
+      "source": ".agents/skills/create-issue-packet/SKILL.md",
+      "target": ".agents/skills/create-issue-packet/SKILL.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": ".agents/skills/initialize-ai-workflow/SKILL.md",
+      "target": ".agents/skills/initialize-ai-workflow/SKILL.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": ".agents/skills/work-issue/SKILL.md",
+      "target": ".agents/skills/work-issue/SKILL.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": ".codex/agents/terra-reviewer-high.toml",
+      "target": ".codex/agents/terra-reviewer-high.toml",
+      "mode": "portable-core"
+    },
+    {
+      "source": ".codex/agents/terra-reviewer.toml",
+      "target": ".codex/agents/terra-reviewer.toml",
+      "mode": "portable-core"
+    },
+    {
+      "source": ".codex/config.toml",
+      "target": ".codex/config.toml",
+      "mode": "portable-core"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "AGENTS.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": "docs/AI_ISSUE_WORKFLOW.md",
+      "target": "docs/AI_ISSUE_WORKFLOW.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": "docs/AI_PORTABLE_WORKFLOW_BUNDLE.md",
+      "target": "docs/AI_PORTABLE_WORKFLOW_BUNDLE.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": "docs/templates/AI_PORTABLE_WORKFLOW_MANIFEST.json",
+      "target": "docs/templates/AI_PORTABLE_WORKFLOW_MANIFEST.json",
+      "mode": "portable-core"
+    },
+    {
+      "source": "docs/templates/AI_REPO_PROFILE_TEMPLATE.md",
+      "target": "docs/templates/AI_REPO_PROFILE_TEMPLATE.md",
+      "mode": "portable-core"
+    },
+    {
+      "source": "docs/templates/AI_REPO_PROFILE_TEMPLATE.md",
+      "target": "docs/AI_REPO_PROFILE.md",
+      "mode": "create-only"
+    },
+    {
+      "source": "docs/templates/AI_SYSTEM_INTERACTION_MAP_TEMPLATE.md",
+      "target": "docs/templates/AI_SYSTEM_INTERACTION_MAP_TEMPLATE.md",
+      "mode": "portable-core"
+    }
+  ]
+}
