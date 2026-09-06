@@ -23,7 +23,7 @@ It does **not** authorize material product-scope expansion, production data acce
 
 Within an authorized issue, necessary local diagnostic preparation/review, compatibility edits, staging, and commits do not require repeated human approval. Follow the procedural workflow for their scope and evidence. This does not override an explicit exclusion or actual tool/access restriction, and does not authorize production execution.
 
-Any production, merge, or deployment authorization must be separate and must name the exact independently reviewed head SHA when the workflow requires exact-SHA authorization.
+Any production-affecting release authorization must be separate from ordinary issue implementation authority and must name the exact independently reviewed head SHA when the workflow requires exact-SHA authorization. The repository profile determines whether merge and deployment are separate actions or one mechanically coupled action set.
 
 ## Evidence and safety invariants
 
