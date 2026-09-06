@@ -6,9 +6,11 @@ A browser-based real-time party-game arcade for small teams (target: 6–7 playe
 
 Players open a URL, enter a display name and room code, and immediately join a shared game lobby. No account is required. A host chooses a game and starts rounds. All gameplay happens synchronously in the browser.
 
-Initial games:
+Public arcade games:
 1. **Who Said That?** — anonymous answers; players guess the author.
 2. **Impostor** — everyone except one player knows a secret word; players submit clues, vote, and the impostor may attempt to steal the round by guessing the word.
+
+System Crawl remains implemented, tested, and supported by the catalog, protocol, and Worker, but its catalog entry is hidden from the normal public game picker. It can be restored later by changing its explicit catalog availability.
 
 The platform is intentionally an arcade: the lobby, identity, room, scoring, reconnect, and real-time infrastructure are reusable for additional games.
 

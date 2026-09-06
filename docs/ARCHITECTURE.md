@@ -21,6 +21,7 @@ A multiplayer room requires a single authoritative coordination point for multip
 Owns:
 - navigation;
 - forms;
+- filtering the lobby game picker to catalog entries marked public;
 - rendering public/private views;
 - local session token persistence;
 - WebSocket connection/reconnection behavior;

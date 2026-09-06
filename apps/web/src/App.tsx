@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react";
 import {
-  GAME_CATALOG,
+  PUBLIC_GAME_CATALOG,
   displayNameSchema,
   roomCodeSchema,
   sessionStorageKey,
+  type GameId,
   type RoomSessionResponse
 } from "@team-arcade/shared";
 import { ApiError, createRoom, joinRoom } from "./api";
@@ -127,7 +128,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
   const host = room?.players.find((player) => player.isHost);
   const joinUrl = `${window.location.origin}/?room=${session.roomCode}`;
 
-  const selectGame = (gameId: (typeof GAME_CATALOG)[number]["id"]) => {
+  const selectGame = (gameId: GameId) => {
     send({ type: "host.selectGame", requestId: crypto.randomUUID(), payload: { gameId } });
   };
 
@@ -189,7 +190,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
             {!self?.isHost && <span className="host-note">{host?.connected === false ? "Host disconnected — holding their seat" : `${host?.displayName ?? "The host"} is choosing`}</span>}
           </div>
           <div className="game-grid">
-            {GAME_CATALOG.map((game, index) => {
+            {PUBLIC_GAME_CATALOG.map((game, index) => {
               const selected = room?.selectedGameId === game.id;
               return (
                 <button
