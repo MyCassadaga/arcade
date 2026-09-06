@@ -111,3 +111,11 @@ Recommended stable codes:
 - SERVER_ERROR
 
 UI text may be friendlier than codes.
+
+## Categories commands and projections
+
+`categories.submitAnswer` is strict: `{ type, gameInstanceId, roundNumber, answer }`, with a UUID game instance, integer round 1–5, and 1–40 trimmed UTF-16 code units (the same bound used by the browser textarea). Unexpected fields are rejected. The pure engine verifies the instance, round, submission phase and frozen active roster. Replay creates a fresh instance; existing game command shapes are unchanged.
+
+During submission, Categories public state contains the current category, submission/roster counts, game/round metadata and scores; it excludes answers, author mappings, normalized values, and future categories. Private state contains only the viewer's own answer/status. Once all active players submit, public `groups` contain `unique` or `cancelled` results with answer/author pairs. Normalized matching keys remain server-owned. Reveal applies each unique author's +1 delta atomically with game state and the request ledger. Host advance changes phases without scoring again.
+
+The five selected categories are frozen in the stored JSON at creation so editing the built-in deck cannot change an active game after eviction. No table or storage migration is needed. See [Categories rules](GAME_SPEC_CATEGORIES.md).

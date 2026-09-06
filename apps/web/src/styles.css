@@ -279,3 +279,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 4px solid 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+.categories .category-results { margin-top: 1.5rem; }
+.categories .category-group { margin-bottom: 1.25rem; }
+.categories .clue-list span { overflow-wrap: anywhere; white-space: pre-wrap; }

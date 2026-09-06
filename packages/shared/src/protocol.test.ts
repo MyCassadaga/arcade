@@ -43,7 +43,7 @@ describe("shared protocol validation", () => {
   });
 
   it("publishes only public games in the arcade catalog", () => {
-    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor"]);
+    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor", "categories"]);
     expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
   });
 

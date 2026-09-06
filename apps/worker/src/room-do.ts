@@ -1,21 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { GameRuleError } from "@team-arcade/game-core";
-import {
-  advanceImpostor,
-  advanceWhoSaidThat,
-  createImpostorState,
-  createWhoSaidThatState,
-  getImpostorPrivateView,
-  getImpostorPublicView,
-  getWhoSaidThatPrivateView,
-  getWhoSaidThatPublicView,
-  handleImpostorCommand,
-  handleWhoSaidThatCommand,
-  type ImpostorState,
-  SystemCrawlRuleError,
-  type SystemCrawlState,
-  type WhoSaidThatState
-} from "@team-arcade/games";
+import { SystemCrawlRuleError, type SystemCrawlState } from "@team-arcade/games";
+import { GAME_REGISTRY, bindGame, isRegisteredGame, type StoredPartyGame } from "./game-registry";
 import {
   MAX_PLAYERS,
   clientMessageSchema,
@@ -78,8 +64,7 @@ interface NewPlayer {
 }
 
 type StoredGame =
-  | { gameId: "who-said-that"; state: WhoSaidThatState }
-  | { gameId: "impostor"; state: ImpostorState }
+  | StoredPartyGame
   | { gameId: "system-crawl"; state: SystemCrawlState };
 
 export class RoomDurableObject extends DurableObject<Env> {
@@ -470,10 +455,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       random: secureRandom
     };
     let game: StoredGame;
-    if (metadata.selectedGameId === "who-said-that") {
-      game = { gameId: "who-said-that", state: createWhoSaidThatState(context) };
-    } else if (metadata.selectedGameId === "impostor") {
-      game = { gameId: "impostor", state: createImpostorState(context) };
+    if (isRegisteredGame(metadata.selectedGameId)) {
+      game = GAME_REGISTRY[metadata.selectedGameId].create(context);
     } else if (metadata.selectedGameId === "system-crawl") {
       const canReplay = metadata.roomPhase === "results" && previousGame?.gameId === "system-crawl" && replayMode !== undefined;
       const seed = replayMode === "same" ? previousGame?.gameId === "system-crawl" ? previousGame.state.seed : null : crypto.randomUUID();
@@ -506,13 +489,9 @@ export class RoomDurableObject extends DurableObject<Env> {
       this.sendError(socket, "INVALID_PHASE", "System Crawl advances through player actions.", requestId);
       return;
     }
-    const result = game.gameId === "who-said-that"
-      ? advanceWhoSaidThat(game.state, secureRandom)
-      : advanceImpostor(game.state, secureRandom);
-    const nextGame: StoredGame = game.gameId === "who-said-that"
-      ? { gameId: game.gameId, state: result.state as WhoSaidThatState }
-      : { gameId: game.gameId, state: result.state as ImpostorState };
-    const isFinished = result.state.phase === "gameResults";
+    const result = bindGame(game).advance(secureRandom);
+    const nextGame = result.state;
+    const isFinished = nextGame.state.phase === "gameResults";
     this.persistGameMutation(
       { ...metadata, roomPhase: isFinished ? "results" : "playing", lastActivityAt: Date.now() },
       nextGame,
@@ -541,27 +520,12 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
     let nextGame: StoredGame;
     let scoreDelta: Readonly<Record<string, number>> = {};
-    if (game.gameId === "who-said-that") {
-      if (!command.type.startsWith("wst.")) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
-      const result = handleWhoSaidThatCommand(
-        game.state,
-        command as Extract<GameCommand, { type: `wst.${string}` }>,
-        playerId,
-        secureRandom
-      );
-      nextGame = { gameId: game.gameId, state: result.state };
-      scoreDelta = result.scoreDelta ?? {};
-    } else if (game.gameId === "impostor") {
-      if (!command.type.startsWith("impostor.")) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
-      const result = handleImpostorCommand(
-        game.state,
-        command as Extract<GameCommand, { type: `impostor.${string}` }>,
-        playerId
-      );
-      nextGame = { gameId: game.gameId, state: result.state };
+    if (game.gameId !== "system-crawl") {
+      const result = bindGame(game).command(command, playerId, secureRandom);
+      nextGame = result.state;
       scoreDelta = result.scoreDelta ?? {};
     } else {
-      if (command.type.startsWith("wst.") || command.type.startsWith("impostor.")) {
+      if (command.type.startsWith("wst.") || command.type.startsWith("impostor.") || command.type === "categories.submitAnswer") {
         throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
       }
       const currentHost = this.readPlayers().find((candidate) => candidate.isHost);
@@ -701,22 +665,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     const player = this.readPlayers().find((candidate) => candidate.id === playerId);
     if (!player) throw new GameRuleError("INVALID_SESSION", "Player no longer exists.");
     const viewer = { playerId, isHost: player.isHost };
-    if (game.gameId === "who-said-that") {
-      return {
-        gameId: game.gameId,
-        phase: game.state.phase,
-        public: getWhoSaidThatPublicView(game.state),
-        private: getWhoSaidThatPrivateView(game.state, viewer)
-      };
-    }
-    if (game.gameId === "impostor") {
-      return {
-        gameId: game.gameId,
-        phase: game.state.phase,
-        public: getImpostorPublicView(game.state),
-        private: getImpostorPrivateView(game.state, viewer)
-      };
-    }
+    if (game.gameId !== "system-crawl") return bindGame(game).project(viewer);
     return {
       gameId: game.gameId,
       phase: game.state.phase,

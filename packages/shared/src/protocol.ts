@@ -153,7 +153,16 @@ export const systemCrawlCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("end_turn"), characterId: systemCrawlEntityIdSchema }).strict()
 ]);
 
+export const categoriesCommandSchema = z.object({
+  type: z.literal("categories.submitAnswer"),
+  gameInstanceId: z.string().uuid(),
+  roundNumber: z.number().int().min(1).max(5),
+  answer: z.string().trim().min(1).max(40)
+}).strict();
+export type CategoriesCommand = z.infer<typeof categoriesCommandSchema>;
+
 export const gameCommandSchema = z.union([
+  categoriesCommandSchema,
   whoSaidThatCommandSchema,
   impostorCommandSchema,
   systemCrawlCommandSchema
@@ -221,7 +230,7 @@ export interface RoomView {
 }
 
 export interface GameViewerState {
-  gameId: "who-said-that" | "impostor" | "system-crawl";
+  gameId: "who-said-that" | "impostor" | "categories" | "system-crawl";
   phase: string;
   public: unknown;
   private?: unknown;
@@ -290,7 +299,31 @@ export type ImpostorPrivateView =
   | { role: "player"; secretWord: string; hasSubmittedClue: boolean; hasVoted: boolean }
   | { role: "impostor"; hasSubmittedClue: boolean; hasVoted: boolean };
 
+export interface CategoriesAnswerGroup {
+  result: "unique" | "cancelled";
+  answers: Array<{ playerId: string; answer: string }>;
+}
+
+export interface CategoriesPublicView {
+  gameInstanceId: string;
+  roundNumber: number;
+  totalRounds: number;
+  category: string;
+  submissionCount: number;
+  totalPlayers: number;
+  groups?: CategoriesAnswerGroup[];
+  roundScores: Record<string, number>;
+  gameScores: Record<string, number>;
+  rankings?: ScoreEntry[];
+}
+
+export interface CategoriesPrivateView {
+  hasSubmitted: boolean;
+  submittedAnswer?: string;
+}
+
 export type TypedGameViewerState =
+  | { gameId: "categories"; phase: "submitting" | "reveal" | "roundResults" | "gameResults"; public: CategoriesPublicView; private: CategoriesPrivateView }
   | { gameId: "who-said-that"; phase: "submitting" | "guessing" | "reveal" | "roundResults" | "gameResults"; public: WhoSaidThatPublicView; private: WhoSaidThatPrivateView }
   | { gameId: "impostor"; phase: "roleReveal" | "clueSubmission" | "clueReveal" | "discussion" | "voting" | "voteReveal" | "impostorGuess" | "roundResults" | "gameResults"; public: ImpostorPublicView; private: ImpostorPrivateView }
   | { gameId: "system-crawl"; phase: "class_selection" | "ready_to_start" | "incident_briefing" | "player_turn" | "resolving_choice" | "enemy_phase" | "victory" | "defeat"; public: unknown; private?: unknown };

@@ -5,7 +5,6 @@ Do not implement these until MVP is accepted.
 Potential games:
 - Majority Rules
 - Rank It
-- Categories / Duplicate Answers Cancel
 - Bad Artist
 - Hot Take
 - Office Price Is Right
@@ -24,4 +23,4 @@ Platform enhancements:
 - admin-managed prompt decks
 - PWA installability
 
-Recommended next game: **Categories** because it reuses simultaneous submission and reveal mechanics while adding a distinct scoring model.
+Implemented in issue #1: **Categories / Duplicate Answers Cancel**, including shared party-game transport adapters and reusable presentation/browser helpers. See [Categories rules](GAME_SPEC_CATEGORIES.md).

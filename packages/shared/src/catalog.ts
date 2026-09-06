@@ -18,6 +18,15 @@ export const GAME_CATALOG = [
     availability: "public"
   },
   {
+    id: "categories",
+    name: "Categories",
+    description: "Think of an original answer. Matching answers cancel; unique answers score.",
+    duration: "5–10 min",
+    playerRange: "2–12 players",
+    icon: "categories",
+    availability: "public"
+  },
+  {
     id: "system-crawl",
     name: "System Crawl",
     description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",

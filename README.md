@@ -9,6 +9,7 @@ Players open a URL, enter a display name and room code, and immediately join a s
 Public arcade games:
 1. **Who Said That?** — anonymous answers; players guess the author.
 2. **Impostor** — everyone except one player knows a secret word; players submit clues, vote, and the impostor may attempt to steal the round by guessing the word.
+3. **Categories** — five rounds for 2–12 players; exact normalized duplicates cancel and unique answers earn a point. See [game rules](docs/GAME_SPEC_CATEGORIES.md).
 
 System Crawl remains implemented, tested, and supported by the catalog, protocol, and Worker, but its catalog entry is hidden from the normal public game picker. It can be restored later by changing its explicit catalog availability.
 
@@ -42,8 +43,8 @@ The complete MVP is implemented and production-ready: the repository contains th
 - `apps/worker`: Cloudflare Worker routing plus one SQLite-backed `RoomDurableObject` per room using the WebSocket Hibernation API.
 - `packages/shared`: the single Zod-validated HTTP/WebSocket protocol and game catalog shared by browser and Worker.
 - `packages/game-core`: Cloudflare-independent plug-in contract and reusable game utilities.
-- `packages/games`: pure deterministic state machines for Who Said That? and Impostor, including viewer-specific public/private projections.
-- `tests/e2e`: a seven-browser multiplayer journey covering a complete Who Said That? game, reconnect, return to the arcade, and an Impostor round.
+- `packages/games`: pure deterministic state machines for Who Said That?, Impostor, and Categories, including viewer-specific public/private projections.
+- `tests/e2e`: reusable isolated-browser room helpers, a seven-player Who Said That?/Impostor journey, and a two-player Categories journey covering five rounds, replay, reconnect, mobile/keyboard access, and room scores.
 
 Room session tokens are 256-bit random opaque values. Only a SHA-256 digest is stored in the room database, and the token is sent in the first WebSocket protocol message rather than a URL. Durable Object SQLite is the only authoritative room state; no D1 database or process-global state is used.
 
@@ -179,6 +180,7 @@ No D1 database, KV namespace, application secret, or dashboard-created storage r
 - Room inactivity schedules expiry after 12 hours; heartbeat activity renews the room.
 - Who Said That? runs for three rounds. Players may revise an answer until everyone submits; guesses never expose the author map before reveal.
 - Impostor runs for four rounds with a non-repeating impostor and secret word, one tie runoff, an optional steal guess, and the documented accurate-voter bonus.
+- Categories runs for five non-repeating categories. Players can edit until everyone submits; exact normalized duplicates earn 0 and unique answers earn 1. Commands identify their game instance and round to reject delayed submissions.
 - The active player roster is frozen when a game starts. Reconnecting participants recover their exact private view; new joins are rejected until the room returns to the arcade because spectator mode is outside the MVP.
 - Scores accumulate for the life of the room and are retained when the host returns everyone to the arcade.
 
@@ -187,8 +189,8 @@ No D1 database, KV namespace, application secret, or dashboard-created storage r
 1. Add catalog metadata and a stable ID in `packages/shared/src/catalog.ts`.
 2. Add strict Zod command schemas and typed viewer projections in `packages/shared/src/protocol.ts`.
 3. Implement a pure engine under `packages/games/src/<game>` using the shared game-core contract. Keep secrets only in authoritative state and expose them through viewer-specific projections.
-4. Route creation, commands, advancement, and projections through `RoomDurableObject`; persist before broadcasting.
-5. Add phase UI to `apps/web/src/GameScreen.tsx`.
+4. Register party-game creation, commands, advancement, and projections in `apps/worker/src/game-registry.ts`. The Room Durable Object retains authorization and atomic state/score/request persistence before broadcasting. Preserve the hidden System Crawl legacy route.
+5. Add a screen using `apps/web/src/game-presentation.tsx` and route it from `GameScreen.tsx`.
 6. Add engine tests, Durable Object authorization/privacy tests, and a multiplayer Playwright journey.
 
 Do not add game-specific Cloudflare storage or a separate transport.

@@ -296,6 +296,112 @@ describe("room Worker and Durable Object", () => {
   });
 });
 
+describe("Categories through the party-game registry", () => {
+  it.each([2, 12])("protects viewer answers, reconnects, and scores once with %i players", async (count) => {
+    const host = await create("Categories Host");
+    const sessions = [host];
+    for (let i = 1; i < count; i++) sessions.push(await join(host.roomCode, `Categories ${i}`));
+    const sockets = await Promise.all(sessions.map(connectReady));
+    const hostSocket = sockets[0] as WebSocket;
+    let serial = 0;
+    const accepted = async (socket: WebSocket, type: string, payload: unknown, requestId = `categories-${serial++}`) => {
+      const ack = waitForMessage(socket, (m) => m.type === "command.ack" && m.requestId === requestId);
+      socket.send(JSON.stringify({ type, payload, requestId }));
+      await ack;
+    };
+    const rejected = async (socket: WebSocket, type: string, payload: unknown, code: string) => {
+      const requestId = `rejected-${serial++}`;
+      const error = waitForMessage(socket, (m) => m.type === "error" && m.requestId === requestId);
+      socket.send(JSON.stringify({ type, payload, requestId }));
+      expect(await error).toMatchObject({ type: "error", payload: { code } });
+    };
+    await accepted(hostSocket, "host.selectGame", { gameId: "categories" });
+    await accepted(hostSocket, "host.startGame", {});
+    let views = await collectCurrentGameViews(sockets);
+    const first = views[0];
+    if (first?.gameId !== "categories") throw new Error("Expected Categories");
+    const gameInstanceId = first.public.gameInstanceId;
+    const answer = (roundNumber: number, text: string) => ({ command: { type: "categories.submitAnswer", gameInstanceId, roundNumber, answer: text } });
+    await rejected(sockets[1] as WebSocket, "host.advance", {}, "NOT_HOST");
+    await rejected(sockets[1] as WebSocket, "host.startGame", {}, "NOT_HOST");
+    await rejected(hostSocket, "game.command", { command: { type: "wst.submitAnswer", answer: "wrong game" } }, "INVALID_COMMAND");
+    const invalidEnvelope = waitForMessage(hostSocket, (m) => m.type === "error" && m.requestId === undefined);
+    hostSocket.send(JSON.stringify({ type: "game.command", requestId: "oversized-answer", payload: answer(1, "x".repeat(41)) }));
+    expect(await invalidEnvelope).toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    const totals = Object.fromEntries(sessions.map((session) => [session.playerId, 0]));
+    for (let round = 1; round <= (count === 2 ? 5 : 1); round++) {
+      if (round > 1) await rejected(hostSocket, "game.command", answer(round - 1, "delayed"), "STALE_PHASE");
+      await accepted(hostSocket, "game.command", answer(round, "first private draft"));
+      await accepted(hostSocket, "game.command", answer(round, "COFFEE mug!"));
+      views = await collectCurrentGameViews(sockets);
+      for (let i = 1; i < count; i++) {
+        expect(JSON.stringify(views[i])).not.toContain("COFFEE mug!");
+        expect(JSON.stringify(views[i])).not.toContain("first private draft");
+      }
+      for (const view of views) {
+        expect(view.gameId).toBe("categories");
+        expect(JSON.stringify(view.public)).not.toContain("COFFEE mug!");
+        expect(view.public).not.toHaveProperty("groups");
+      }
+      if (round === 1) {
+        await evictDurableObject(stub);
+        const reconnect = await connectWithGame(host);
+        expect(reconnect.game).toEqual(views[0]);
+        reconnect.socket.close(1000);
+      }
+      for (let i = 1; i < count; i++) {
+        const text = round % 2 === 1 && i === 1 ? "coffee   MUG" : `unique ${i}`;
+        await accepted(sockets[i] as WebSocket, "game.command", answer(round, text), `scoring-${round}-${i}`);
+      }
+      views = await collectCurrentGameViews(sockets);
+      expect(views[0]).toMatchObject({ phase: "reveal" });
+      for (let i = 0; i < count; i++) {
+        const id = sessions[i]!.playerId;
+        totals[id] = (totals[id] ?? 0) + (round % 2 === 1 && i < 2 ? 0 : 1);
+      }
+      expect(views[0]?.public).toMatchObject({ gameScores: totals });
+      const beforeDuplicate = views;
+      await accepted(sockets[count - 1] as WebSocket, "game.command", answer(round, "different retry"), `scoring-${round}-${count - 1}`);
+      await rejected(hostSocket, "game.command", answer(round, "too late"), "STALE_PHASE");
+      expect(await collectCurrentGameViews(sockets)).toEqual(beforeDuplicate);
+      if (round === 1) {
+        await evictDurableObject(stub);
+        const reconnect = await connectWithGame(sessions[1]!);
+        expect(reconnect.game).toEqual(views[1]);
+        reconnect.socket.close(1000);
+      }
+      await accepted(hostSocket, "host.advance", {});
+      expect((await collectCurrentGameViews(sockets))[0]).toMatchObject({ phase: "roundResults" });
+      await accepted(hostSocket, "host.advance", {});
+    }
+    if (count === 2) {
+      views = await collectCurrentGameViews(sockets);
+      expect(views[0]).toMatchObject({ phase: "gameResults", public: { gameScores: totals } });
+      await evictDurableObject(stub);
+      const reconnect = await connectWithGame(host);
+      expect(reconnect.game).toEqual(views[0]);
+      reconnect.socket.close(1000);
+      await accepted(hostSocket, "host.startGame", {});
+      const replay = (await collectCurrentGameViews(sockets))[0];
+      expect(replay).toMatchObject({ gameId: "categories", phase: "submitting", public: { roundNumber: 1, gameScores: Object.fromEntries(sessions.map((s) => [s.playerId, 0])) } });
+      if (replay?.gameId !== "categories") throw new Error("Expected replay");
+      expect(replay.public.gameInstanceId).not.toBe(gameInstanceId);
+      await rejected(hostSocket, "game.command", answer(1, "previous game"), "STALE_PHASE");
+      await rejected(sockets[1] as WebSocket, "host.backToArcade", {}, "NOT_HOST");
+      await accepted(hostSocket, "host.backToArcade", {});
+      const snapshot = waitForMessage(hostSocket, (m) => m.type === "room.snapshot");
+      hostSocket.send(JSON.stringify({ type: "room.reconnect", requestId: "room-scores", payload: { sessionToken: host.sessionToken } }));
+      const room = await snapshot;
+      if (room.type !== "room.snapshot") throw new Error("Expected room");
+      expect(room.payload.roomPhase).toBe("lobby");
+      expect(room.payload.players).toHaveLength(count);
+      expect(Object.fromEntries(room.payload.players.map((p) => [p.id, p.score]))).toEqual(totals);
+    }
+    for (const socket of sockets) socket.close(1000, "test complete");
+  });
+});
+
 async function create(displayName: string): Promise<RoomSessionResponse> {
   const response = await call("/api/rooms", { displayName });
   expect(response.status).toBe(201);

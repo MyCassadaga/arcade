@@ -201,7 +201,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
                   disabled={!self?.isHost || status !== "connected" || commandPending}
                   onClick={() => selectGame(game.id)}
                 >
-                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : "⌁"}</span>
+                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : "⌁"}</span>
                   <span className="game-title">{game.name}</span>
                   <span className="game-description">{game.description}</span>
                   <span className="game-meta"><span>{game.duration}</span><span>{game.playerRange}</span></span>

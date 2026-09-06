@@ -1,12 +1,11 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { PhaseCard, AnswerForm, TextCommandForm, Progress, Waiting, PrimaryAction, Points, ScoreBoard, GameResults, playerName } from "./game-presentation";
+import { CategoriesScreen } from "./CategoriesScreen";
 import type {
   ClientMessage,
   GameCommand,
-  ImpostorPublicView,
   PlayerView,
   RoomView,
-  TypedGameViewerState,
-  WhoSaidThatPublicView
+  TypedGameViewerState
 } from "@team-arcade/shared";
 import type { SystemCrawlViewerState } from "@team-arcade/games";
 import { SystemCrawlScreen } from "./SystemCrawlScreen";
@@ -55,7 +54,7 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
   return (
     <section className={`game-stage ${game.gameId}`} aria-live="polite">
       <div className="phase-topline">
-        <span>{game.gameId === "who-said-that" ? "Who Said That?" : "Impostor"}</span>
+        <span>{game.gameId === "who-said-that" ? "Who Said That?" : game.gameId === "categories" ? "Categories" : "Impostor"}</span>
         <span>Round {game.public.roundNumber} of {game.public.totalRounds}</span>
       </div>
       {game.gameId === "who-said-that" ? (
@@ -69,6 +68,9 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
           playAgain={playAgain}
           backToArcade={backToArcade}
         />
+      ) : game.gameId === "categories" ? (
+        <CategoriesScreen game={game} players={room.players} selfId={selfId} isHost={self?.isHost === true}
+          sendGame={sendGame} hostAdvance={hostAdvance} playAgain={playAgain} backToArcade={backToArcade} />
       ) : (
         <ImpostorScreen
           game={game}
@@ -85,7 +87,7 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
   );
 }
 
-interface SharedGameProps {
+export interface SharedGameProps {
   players: PlayerView[];
   selfId: string;
   isHost: boolean;
@@ -259,85 +261,14 @@ function ImpostorScreen({ game, players, selfId, isHost, sendGame, hostAdvance, 
   return <GameResults title="Final undercover standings" view={view} players={players} isHost={isHost} playAgain={playAgain} backToArcade={backToArcade} />;
 }
 
-function PhaseCard({ title, kicker, children }: { title: string; kicker: string; children: ReactNode }) {
-  return <div className="phase-card"><p className="phase-kicker">{kicker}</p><h2>{title}</h2>{children}</div>;
-}
-
-function AnswerForm({ initialValue, submitted, onSubmit }: { initialValue: string; submitted: boolean; onSubmit: (value: string) => boolean }) {
-  return <TextCommandForm label="Your answer" maxLength={160} button={submitted ? "Update answer" : "Submit answer"} initialValue={initialValue} onSubmit={onSubmit} />;
-}
-
-function TextCommandForm({ label, maxLength, button, initialValue = "", onSubmit }: { label: string; maxLength: number; button: string; initialValue?: string; onSubmit: (value: string) => boolean }) {
-  const [value, setValue] = useState(initialValue);
-  useEffect(() => setValue(initialValue), [initialValue]);
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (value.trim() && onSubmit(value.trim())) setValue("");
-  };
-  return (
-    <form className="command-form" onSubmit={submit}>
-      <label htmlFor={`command-${label.replaceAll(" ", "-")}`}>{label}</label>
-      <textarea id={`command-${label.replaceAll(" ", "-")}`} value={value} maxLength={maxLength} onChange={(event) => setValue(event.target.value)} />
-      <div className="character-count">{value.length}/{maxLength}</div>
-      <button className="primary-button" type="submit" disabled={!value.trim()}>{button}</button>
-    </form>
-  );
-}
-
 function ChoiceGrid({ players, label, onChoose }: { players: PlayerView[]; label: string; onChoose: (playerId: string) => boolean }) {
   return <div className="choice-section"><h3>{label}</h3><div className="choice-grid">{players.map((player) => <button type="button" key={player.id} onClick={() => onChoose(player.id)}>{player.displayName}</button>)}</div></div>;
-}
-
-function Progress({ current, total, label }: { current: number; total: number; label: string }) {
-  return <div className="game-progress"><div><strong>{current}/{total}</strong><span>{label}</span></div><progress max={total} value={current} aria-label={`${current} of ${total} ${label}`} /></div>;
-}
-
-function Waiting({ text }: { text: string }) {
-  return <div className="waiting-card" role="status"><i aria-hidden="true" /><span>{text}</span></div>;
-}
-
-function PrimaryAction({ onClick, children }: { onClick: () => boolean; children: ReactNode }) {
-  return <button className="primary-button phase-action" type="button" onClick={onClick}>{children}</button>;
 }
 
 function Distribution({ players, values, title = "Vote spread" }: { players: PlayerView[]; values: Record<string, number>; title?: string }) {
   return <div className="distribution"><h3>{title}</h3>{Object.entries(values).sort(([, a], [, b]) => b - a).map(([playerId, count]) => <div key={playerId}><span>{playerName(players, playerId)}</span><strong>{count}</strong></div>)}</div>;
 }
 
-function Points({ players, scores }: { players: PlayerView[]; scores: Record<string, number> }) {
-  const earned = Object.entries(scores).filter(([, score]) => score > 0);
-  return <div className="points-strip">{earned.length === 0 ? <span>No points this time</span> : earned.map(([playerId, score]) => <span key={playerId}><strong>+{score}</strong> {playerName(players, playerId)}</span>)}</div>;
-}
-
-function ScoreBoard({ players, scores }: { players: PlayerView[]; scores: Record<string, number> }) {
-  const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
-  return <ol className="game-scoreboard">{sorted.map(([playerId, score], index) => {
-    const previous = sorted[index - 1];
-    const placement = previous?.[1] === score ? sorted.findIndex(([, candidate]) => candidate === score) + 1 : index + 1;
-    return <li key={playerId}><span>{placement}</span><strong>{playerName(players, playerId)}</strong><b>{score} pts</b></li>;
-  })}</ol>;
-}
-
-function GameResults({ title, view, players, isHost, playAgain, backToArcade }: { title: string; view: WhoSaidThatPublicView | ImpostorPublicView; players: PlayerView[]; isHost: boolean; playAgain: () => boolean; backToArcade: () => boolean }) {
-  const topScore = Math.max(...Object.values(view.gameScores));
-  const winners = Object.entries(view.gameScores).filter(([, score]) => score === topScore).map(([playerId]) => playerName(players, playerId));
-  return (
-    <PhaseCard title={title} kicker="Game complete">
-      <div className="winner-celebration" role="status">
-        <span className="celebration-burst" aria-hidden="true">✦</span>
-        <p>{winners.length === 1 ? "Arcade champion" : "Arcade champions"}<strong>{winners.join(" & ")}</strong></p>
-        <span className="celebration-burst celebration-burst-two" aria-hidden="true">★</span>
-      </div>
-      <ScoreBoard players={players} scores={view.gameScores} />
-      {isHost ? <div className="result-actions"><PrimaryAction onClick={playAgain}>Play again</PrimaryAction><button className="secondary-button" type="button" onClick={backToArcade}>Back to arcade</button></div> : <Waiting text="The host can play again or return to the arcade." />}
-    </PhaseCard>
-  );
-}
-
 function ClueList({ players, clues }: { players: PlayerView[]; clues: Array<{ playerId: string; clue: string }> }) {
   return <ul className="clue-list">{clues.map(({ playerId, clue }) => <li key={playerId}><strong>{playerName(players, playerId)}</strong><span>{clue}</span></li>)}</ul>;
-}
-
-function playerName(players: PlayerView[], playerId: string): string {
-  return players.find((player) => player.id === playerId)?.displayName ?? "Unknown player";
 }

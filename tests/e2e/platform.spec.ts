@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { createRoomPlayers, requiredPage, reloadAtHeading } from "./room-helpers";
+import { expect, test, type Page } from "@playwright/test";
 
 const playerNames = Array.from({ length: 7 }, (_, index) => `Player ${String.fromCharCode(65 + index)}`);
 
@@ -123,29 +124,9 @@ test("solo System Crawl controls two characters through briefing and reconnect",
 });
 
 test("seven players complete Who Said That and an Impostor round without losing private state", async ({ browser }) => {
-  const contexts: BrowserContext[] = [];
-  const pages: Page[] = [];
+  const { contexts, pages } = await createRoomPlayers(browser, playerNames);
   try {
-    for (let index = 0; index < playerNames.length; index += 1) {
-      const context = await browser.newContext();
-      contexts.push(context);
-      pages.push(await context.newPage());
-    }
-
     const host = requiredPage(pages, 0);
-    await host.goto("/");
-    await host.getByLabel("Display name").fill(playerNames[0] as string);
-    await host.getByRole("button", { name: "Create game" }).click();
-    await expect(host.getByText("Players", { exact: true })).toBeVisible();
-    const roomCode = await host.locator(".room-banner h1").innerText();
-
-    for (let index = 1; index < pages.length; index += 1) {
-      const page = requiredPage(pages, index);
-      await page.goto(`/?room=${roomCode}`);
-      await page.getByLabel("Display name").fill(playerNames[index] as string);
-      await page.getByRole("button", { name: "Join the fun" }).click();
-    }
-    await Promise.all(pages.map((page) => expect(page.locator(".player-list li")).toHaveCount(7)));
     const reconnectingPlayer = requiredPage(pages, 2);
     await reconnectingPlayer.reload();
     await expect(reconnectingPlayer.getByText("Player C (you)")).toBeVisible();
@@ -265,17 +246,6 @@ async function findVisibleHeading(pages: Page[], name: string): Promise<number> 
     if (await requiredPage(pages, index).getByRole("heading", { name }).isVisible()) return index;
   }
   throw new Error(`No page displayed heading: ${name}`);
-}
-
-function requiredPage(pages: Page[], index: number): Page {
-  const page = pages[index];
-  if (!page) throw new Error(`Missing page ${index}`);
-  return page;
-}
-
-async function reloadAtHeading(page: Page, name: string): Promise<void> {
-  await page.reload();
-  await expect(page.getByRole("heading", { name })).toBeVisible();
 }
 
 async function expectStableViewport(page: Page): Promise<void> {
