@@ -1,5 +1,6 @@
 import { PhaseCard, AnswerForm, TextCommandForm, Progress, Waiting, PrimaryAction, Points, ScoreBoard, GameResults, playerName } from "./game-presentation";
 import { CategoriesScreen } from "./CategoriesScreen";
+import { AfterprintScreen } from "./AfterprintScreen";
 import type {
   ClientMessage,
   GameCommand,
@@ -47,6 +48,14 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
           replaySameSeed={() => systemCrawlReplay("same")}
           backToArcade={backToArcade}
         />
+      </section>
+    );
+  }
+
+  if (game.gameId === "afterprint") {
+    return (
+      <section className="game-stage afterprint">
+        <AfterprintScreen game={game} commandPending={commandPending} sendGame={sendGame} playAgain={playAgain} backToArcade={backToArcade} />
       </section>
     );
   }

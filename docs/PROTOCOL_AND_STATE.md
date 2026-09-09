@@ -119,3 +119,11 @@ UI text may be friendlier than codes.
 During submission, Categories public state contains the current category, submission/roster counts, game/round metadata and scores; it excludes answers, author mappings, normalized values, and future categories. Private state contains only the viewer's own answer/status. Once all active players submit, public `groups` contain `unique` or `cancelled` results with answer/author pairs. Normalized matching keys remain server-owned. Reveal applies each unique author's +1 delta atomically with game state and the request ledger. Host advance changes phases without scoring again.
 
 The five selected categories are frozen in the stored JSON at creation so editing the built-in deck cannot change an active game after eviction. No table or storage migration is needed. See [Categories rules](GAME_SPEC_CATEGORIES.md).
+
+## AFTERPRINT commands and projections
+
+`afterprint.submitOrder` is strict: `{ type, gameInstanceId, puzzleNumber, eventIds }`. The instance is a UUID, the puzzle number is a positive integer, and `eventIds` is an exact five-value permutation of `A` through `E`. The pure engine verifies the frozen active player, current instance/date puzzle, playing phase, and four-attempt limit. Existing persisted request IDs prevent an accepted submission from consuming a second attempt on retry.
+
+The public view contains the UTC puzzle number, bank version, explicit 25-cell target, five bounded diagram events, immutable initial order, compact attempt history, active player ID, and solved flag. Roll/Wipe paths contain two to five 0–24 cell indices; attempts contain only five event IDs, mismatch count, and solved state. The authored validation order is never stored in active game state or projected. The private view only says whether this viewer may submit.
+
+The Worker persists a correct attempt or fourth miss together with the room transition to results before broadcasting. Reviewing an attempt runs the same simulator in the browser without sending a command. See [AFTERPRINT rules](GAME_SPEC_AFTERPRINT.md).

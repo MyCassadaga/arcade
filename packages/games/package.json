@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./who-said-that": "./src/who-said-that/index.ts",
     "./impostor": "./src/impostor/index.ts",
+    "./afterprint": "./src/afterprint/simulator.ts",
+    "./afterprint/puzzles": "./src/afterprint/puzzles.ts",
     "./system-crawl": "./src/system-crawl/index.ts"
   },
   "dependencies": {

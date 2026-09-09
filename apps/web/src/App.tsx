@@ -149,7 +149,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
   };
 
   return (
-    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""}`}>
+    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${game?.gameId === "afterprint" ? "afterprint-room" : ""}`}>
       <header className="lobby-header">
         <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); leave(); }} aria-label="Leave room and return home">
           <span>TA</span><strong>Team Arcade</strong>
@@ -159,7 +159,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         </div>
       </header>
 
-      <section className="room-banner">
+      {game?.gameId !== "afterprint" && <section className="room-banner">
         <div>
           <p className="eyebrow">Room code</p>
           <h1>{session.roomCode}</h1>
@@ -174,7 +174,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         >
           Copy invite link
         </button>
-      </section>
+      </section>}
 
       {(status !== "connected" || message) && (
         <div className="status-panel" role="alert">
@@ -183,7 +183,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         </div>
       )}
 
-      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""}`}>
+      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""}`}>
         {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
@@ -201,7 +201,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
                   disabled={!self?.isHost || status !== "connected" || commandPending}
                   onClick={() => selectGame(game.id)}
                 >
-                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : "⌁"}</span>
+                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : game.icon === "afterprint" ? "▦" : "⌁"}</span>
                   <span className="game-title">{game.name}</span>
                   <span className="game-description">{game.description}</span>
                   <span className="game-meta"><span>{game.duration}</span><span>{game.playerRange}</span></span>
@@ -222,7 +222,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
           )}
         </section>}
 
-        <aside className="players-panel" aria-labelledby="players-title">
+        {game?.gameId !== "afterprint" && <aside className="players-panel" aria-labelledby="players-title">
           <div className="players-heading">
             <div><p className="eyebrow">The crew</p><h2 id="players-title">Players</h2></div>
             <span className="player-count">{room?.players.length ?? 0}/12</span>
@@ -239,7 +239,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
             </ol>
           )}
           <button className="text-button" type="button" onClick={leave}>Leave room</button>
-        </aside>
+        </aside>}
       </div>
       <p className="sr-only" aria-live="polite">{room ? `${room.players.filter((player) => player.connected).length} players connected.` : "Connecting to room."}</p>
     </main>

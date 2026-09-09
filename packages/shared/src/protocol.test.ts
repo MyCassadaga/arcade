@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
+import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
 import { GAME_CATALOG, PUBLIC_GAME_CATALOG } from "./catalog";
 
 describe("shared protocol validation", () => {
@@ -43,8 +43,21 @@ describe("shared protocol validation", () => {
   });
 
   it("publishes only public games in the arcade catalog", () => {
-    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor", "categories"]);
+    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor", "categories", "afterprint"]);
     expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
+  });
+
+  it("strictly validates AFTERPRINT identity and five-event permutations", () => {
+    const valid = {
+      type: "afterprint.submitOrder",
+      gameInstanceId: "00000000-0000-4000-8000-000000000019",
+      puzzleNumber: 1,
+      eventIds: ["A", "B", "C", "D", "E"]
+    };
+    expect(afterprintCommandSchema.safeParse(valid).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ type: "game.command", requestId: "afterprint-1", payload: { command: valid } }).success).toBe(true);
+    expect(afterprintCommandSchema.safeParse({ ...valid, eventIds: ["A", "B", "C", "D", "D"] }).success).toBe(false);
+    expect(afterprintCommandSchema.safeParse({ ...valid, extra: true }).success).toBe(false);
   });
 
   it("runtime-validates every System Crawl action intent", () => {

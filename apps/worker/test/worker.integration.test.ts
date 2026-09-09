@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/types";
 import type { RoomSessionResponse, ServerMessage, TypedGameViewerState } from "@team-arcade/shared";
+import { AFTERPRINT_EVENT_IDS } from "@team-arcade/shared";
+import { countAfterprintMismatches, enumerateAfterprintOrders, simulateAfterprint } from "@team-arcade/games";
 
 const testEnv = env as unknown as Env;
 
@@ -399,6 +401,130 @@ describe("Categories through the party-game registry", () => {
       expect(Object.fromEntries(room.payload.players.map((p) => [p.id, p.score]))).toEqual(totals);
     }
     for (const socket of sockets) socket.close(1000, "test complete");
+  });
+});
+
+describe("AFTERPRINT through the party-game registry", () => {
+  it("freezes one shared daily puzzle across rooms and rejects multiplayer starts", async () => {
+    const first = await create("First Solo");
+    const second = await create("Second Solo");
+    const firstSocket = await connectReady(first);
+    const secondSocket = await connectReady(second);
+    const start = async (socket: WebSocket, prefix: string) => {
+      const selectAck = waitForMessage(socket, (message) => message.type === "command.ack" && message.requestId === `${prefix}-select`);
+      socket.send(JSON.stringify({ type: "host.selectGame", requestId: `${prefix}-select`, payload: { gameId: "afterprint" } }));
+      await selectAck;
+      const game = waitForGame(socket, (candidate) => candidate.gameId === "afterprint");
+      socket.send(JSON.stringify({ type: "host.startGame", requestId: `${prefix}-start`, payload: {} }));
+      return game;
+    };
+    const [firstView, secondView] = await Promise.all([start(firstSocket, "first"), start(secondSocket, "second")]);
+    if (firstView.gameId !== "afterprint" || secondView.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+    expect({ ...firstView.public, gameInstanceId: "stable", activePlayerId: "stable" })
+      .toEqual({ ...secondView.public, gameInstanceId: "stable", activePlayerId: "stable" });
+
+    const crowded = await create("Crowded Host");
+    const crowdedGuest = await join(crowded.roomCode, "Crowded Guest");
+    const crowdedSocket = await connectReady(crowded);
+    const crowdedPresence = waitForMessage(crowdedSocket, (message) => message.type === "room.presence" && message.payload.players.filter((player) => player.connected).length === 2);
+    const crowdedGuestSocket = await connectReady(crowdedGuest);
+    await crowdedPresence;
+    const crowdedSelect = waitForMessage(crowdedSocket, (message) => message.type === "command.ack" && message.requestId === "crowded-select");
+    crowdedSocket.send(JSON.stringify({ type: "host.selectGame", requestId: "crowded-select", payload: { gameId: "afterprint" } }));
+    await crowdedSelect;
+    const error = waitForMessage(crowdedSocket, (message) => message.type === "error" && message.requestId === "crowded-start");
+    crowdedSocket.send(JSON.stringify({ type: "host.startGame", requestId: "crowded-start", payload: {} }));
+    await expect(error).resolves.toMatchObject({ type: "error", payload: { code: "TOO_MANY_PLAYERS" } });
+    firstSocket.close(1000); secondSocket.close(1000); crowdedSocket.close(1000); crowdedGuestSocket.close(1000);
+  });
+
+  it("persists attempts, rejects stale/foreign commands, and atomically finishes on the fourth miss", async () => {
+    const session = await create("Trace Solver");
+    const socket = await connectReady(session);
+    socket.send(JSON.stringify({ type: "host.selectGame", requestId: "afterprint-select", payload: { gameId: "afterprint" } }));
+    await waitForMessage(socket, (message) => message.type === "command.ack" && message.requestId === "afterprint-select");
+    const started = waitForGame(socket, (game) => game.gameId === "afterprint");
+    socket.send(JSON.stringify({ type: "host.startGame", requestId: "afterprint-start", payload: {} }));
+    const view = await started;
+    if (view.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+    const submitted = (eventIds = view.public.initialEventIds) => ({
+      command: { type: "afterprint.submitOrder", gameInstanceId: view.public.gameInstanceId, puzzleNumber: view.public.puzzleNumber, eventIds }
+    });
+    const invalid = waitForMessage(socket, (message) => message.type === "error" && message.requestId === undefined);
+    socket.send(JSON.stringify({ type: "game.command", requestId: "invalid-order", payload: submitted(["A", "B", "C", "D", "D"]) }));
+    await expect(invalid).resolves.toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+
+    const foreign = waitForMessage(socket, (message) => message.type === "error" && message.requestId === "foreign-command");
+    socket.send(JSON.stringify({ type: "game.command", requestId: "foreign-command", payload: {
+      command: { type: "wst.submitAnswer", answer: "wrong game" }
+    } }));
+    await expect(foreign).resolves.toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+
+    const stale = waitForMessage(socket, (message) => message.type === "error" && message.requestId === "stale-puzzle");
+    socket.send(JSON.stringify({ type: "game.command", requestId: "stale-puzzle", payload: {
+      command: { ...submitted().command, puzzleNumber: view.public.puzzleNumber + 1 }
+    } }));
+    await expect(stale).resolves.toMatchObject({ type: "error", payload: { code: "STALE_PHASE" } });
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const requestId = `miss-${attempt}`;
+      const next = waitForGame(socket, (game) => game.gameId === "afterprint" && game.public.attempts.length === attempt);
+      socket.send(JSON.stringify({ type: "game.command", requestId, payload: submitted() }));
+      const attemptView = await next;
+      if (attemptView.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+      expect(attemptView).toMatchObject({ phase: "playing", public: { solved: false } });
+      expect(attemptView.public.attempts.at(-1)?.mismatchCount).toBeGreaterThan(0);
+    }
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(session.roomCode));
+    await evictDurableObject(stub);
+    const reconnected = await connectWithGame(session);
+    expect(reconnected.game).toMatchObject({ gameId: "afterprint", phase: "playing" });
+    if (reconnected.game.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+    expect(reconnected.game.public.attempts).toHaveLength(3);
+    expect(reconnected.game.public.attempts.every((attempt) => !attempt.solved)).toBe(true);
+    reconnected.socket.close(1000);
+
+    const finalGame = waitForGame(socket, (game) => game.gameId === "afterprint" && game.phase === "gameResults");
+    const finalRoom = waitForMessage(socket, (message) => message.type === "room.presence" && message.payload.roomPhase === "results");
+    socket.send(JSON.stringify({ type: "game.command", requestId: "miss-4", payload: submitted() }));
+    const [finished] = await Promise.all([finalGame, finalRoom]);
+    expect(finished).toMatchObject({ gameId: "afterprint", phase: "gameResults", public: { solved: false } });
+    if (finished.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+    expect(finished.public.attempts).toHaveLength(4);
+    await evictDurableObject(stub);
+    const finalReconnect = await connectWithGame(session);
+    expect(finalReconnect.game).toEqual(finished);
+    finalReconnect.socket.close(1000); socket.close(1000);
+  });
+
+  it("accepts a mechanically valid order and persists an idempotent win before broadcasting results", async () => {
+    const session = await create("Daily Solver");
+    const socket = await connectReady(session);
+    socket.send(JSON.stringify({ type: "host.selectGame", requestId: "win-select", payload: { gameId: "afterprint" } }));
+    await waitForMessage(socket, (message) => message.type === "command.ack" && message.requestId === "win-select");
+    const started = waitForGame(socket, (game) => game.gameId === "afterprint");
+    socket.send(JSON.stringify({ type: "host.startGame", requestId: "win-start", payload: {} }));
+    const view = await started;
+    if (view.gameId !== "afterprint") throw new Error("Expected AFTERPRINT");
+    const solution = enumerateAfterprintOrders([...AFTERPRINT_EVENT_IDS]).find((order) =>
+      countAfterprintMismatches(simulateAfterprint(view.public.events, order), view.public.target) === 0
+    );
+    expect(solution).toBeDefined();
+    const requestId = "winning-order";
+    const finalGame = waitForGame(socket, (game) => game.gameId === "afterprint" && game.phase === "gameResults");
+    const finalRoom = waitForMessage(socket, (message) => message.type === "room.presence" && message.payload.roomPhase === "results");
+    const winningCommand = { type: "game.command", requestId, payload: { command: {
+      type: "afterprint.submitOrder", gameInstanceId: view.public.gameInstanceId, puzzleNumber: view.public.puzzleNumber, eventIds: solution
+    } } };
+    socket.send(JSON.stringify(winningCommand));
+    const [finished] = await Promise.all([finalGame, finalRoom]);
+    expect(finished).toMatchObject({ gameId: "afterprint", phase: "gameResults", public: { solved: true, attempts: [{ mismatchCount: 0, solved: true }] } });
+    const duplicateAck = waitForMessage(socket, (message) => message.type === "command.ack" && message.requestId === requestId);
+    socket.send(JSON.stringify(winningCommand));
+    await duplicateAck;
+    const reconnect = await connectWithGame(session);
+    expect(reconnect.game).toEqual(finished);
+    reconnect.socket.close(1000); socket.close(1000);
   });
 });
 

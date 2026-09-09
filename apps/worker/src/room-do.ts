@@ -5,6 +5,7 @@ import { GAME_REGISTRY, bindGame, isRegisteredGame, type StoredPartyGame } from 
 import {
   MAX_PLAYERS,
   clientMessageSchema,
+  systemCrawlCommandSchema,
   type ClientMessage,
   type ErrorCode,
   type GameCommand,
@@ -525,7 +526,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       nextGame = result.state;
       scoreDelta = result.scoreDelta ?? {};
     } else {
-      if (command.type.startsWith("wst.") || command.type.startsWith("impostor.") || command.type === "categories.submitAnswer") {
+      if (!systemCrawlCommandSchema.safeParse(command).success) {
         throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
       }
       const currentHost = this.readPlayers().find((candidate) => candidate.isHost);
@@ -539,7 +540,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       nextGame = { gameId: game.gameId, state: result.state };
     }
     const isFinished = nextGame.gameId === "system-crawl"
-      && (nextGame.state.phase === "victory" || nextGame.state.phase === "defeat");
+      ? nextGame.state.phase === "victory" || nextGame.state.phase === "defeat"
+      : nextGame.state.phase === "gameResults";
     this.persistGameMutation(
       { ...metadata, roomPhase: isFinished ? "results" : "playing", lastActivityAt: Date.now() },
       nextGame,
