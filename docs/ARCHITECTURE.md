@@ -21,11 +21,14 @@ A multiplayer room requires a single authoritative coordination point for multip
 Owns:
 - navigation;
 - forms;
+- presenting catalog entries by room or single-player launch mode;
 - filtering the lobby game picker to catalog entries marked public;
 - rendering public/private views;
 - local session token persistence;
 - WebSocket connection/reconnection behavior;
 - optimistic affordances only when they cannot affect authoritative outcome.
+
+The main page launches catalogued single-player games without room ceremony. For AFTERPRINT, the client creates the existing one-player room internally, stores the session token under the established room-keyed local-storage key, and stores only a game-to-room-code pointer for refresh recovery. Before reopening a stored solo session, it posts the token to the bounded session-validation route; a typed missing/expired/invalid response clears both local entries, while a network failure preserves them and offers a retry. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
 
 Does not own:
 - scoring;
@@ -131,6 +134,7 @@ Client reconnection algorithm:
 - cap retry delay at a reasonable value such as 10 seconds;
 - immediately show `Reconnecting…` state;
 - reconnect with room code and locally stored session token;
+- for a stored direct-solo session, revalidate the token after an opaque WebSocket upgrade failure so a room that expired between the resume preflight and socket connection is cleared instead of retried forever;
 - server rebinds socket to player identity;
 - server sends complete current player-specific snapshot;
 - client replaces local game state with server snapshot.

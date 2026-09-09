@@ -113,6 +113,9 @@ export class RoomDurableObject extends DurableObject<Env> {
     if (request.method === "POST" && url.pathname === "/internal/join") {
       return this.join(request);
     }
+    if (request.method === "POST" && url.pathname === "/internal/session") {
+      return this.validateSession(request);
+    }
     if (request.method === "GET" && url.pathname === "/internal/socket") {
       return this.openSocket(request);
     }
@@ -194,6 +197,17 @@ export class RoomDurableObject extends DurableObject<Env> {
     await this.scheduleAlarm();
     console.log(JSON.stringify({ event: "player.joined", roomCode: metadata.roomCode, playerId: newPlayer.session.playerId }));
     return Response.json({ ...newPlayer.session, roomCode: metadata.roomCode } satisfies RoomSessionResponse, { status: 201 });
+  }
+
+  private async validateSession(request: Request): Promise<Response> {
+    const metadata = await this.activeMetadata();
+    if (metadata instanceof Response) return metadata;
+    const { sessionToken } = await request.json<{ sessionToken: string }>();
+    const tokenHash = await hashSessionToken(sessionToken);
+    const player = this.readPlayers().find((candidate) => candidate.sessionTokenHash === tokenHash);
+    return player
+      ? Response.json({ valid: true })
+      : jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
   }
 
   private openSocket(request: Request): Response {

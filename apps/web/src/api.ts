@@ -13,12 +13,34 @@ export class ApiError extends Error {
   }
 }
 
+export function isTerminalRoomSessionError(error: unknown): error is ApiError {
+  return error instanceof ApiError
+    && ["ROOM_NOT_FOUND", "ROOM_EXPIRED", "INVALID_SESSION"].includes(error.code);
+}
+
 export async function createRoom(displayName: string): Promise<RoomSessionResponse> {
   return requestSession("/api/rooms", displayName);
 }
 
 export async function joinRoom(roomCode: string, displayName: string): Promise<RoomSessionResponse> {
   return requestSession(`/api/rooms/${encodeURIComponent(roomCode)}/join`, displayName);
+}
+
+export async function validateRoomSession(roomCode: string, sessionToken: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionToken })
+    });
+  } catch {
+    throw new ApiError("We could not reach the arcade. Check your connection and try again.", "NETWORK_ERROR");
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as ApiErrorBody;
+    throw new ApiError(body.error?.message ?? "This session could not be restored.", body.error?.code);
+  }
 }
 
 async function requestSession(path: string, displayName: string): Promise<RoomSessionResponse> {

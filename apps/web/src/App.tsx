@@ -1,40 +1,79 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   PUBLIC_GAME_CATALOG,
+  SINGLE_PLAYER_GAME_CATALOG,
   displayNameSchema,
   roomCodeSchema,
   sessionStorageKey,
   type GameId,
   type RoomSessionResponse
 } from "@team-arcade/shared";
-import { ApiError, createRoom, joinRoom } from "./api";
+import { ApiError, createRoom, isTerminalRoomSessionError, joinRoom, validateRoomSession } from "./api";
 import { useRoomSocket } from "./useRoomSocket";
 import { GameScreen } from "./GameScreen";
+import { nextSoloLaunchCommand, soloRoomPointerStorageKey, type SoloLaunchRequestIds } from "./solo-launch";
 
 type EntryMode = "create" | "join";
+type SoloGameId = (typeof SINGLE_PLAYER_GAME_CATALOG)[number]["id"];
 
-export function App() {
-  const initialCode = useMemo(() => {
-    const candidate = new URLSearchParams(window.location.search).get("room") ?? "";
-    return roomCodeSchema.safeParse(candidate).data ?? "";
-  }, []);
-  const storedSession = initialCode ? readStoredSession(initialCode) : null;
-  const [session, setSession] = useState<RoomSessionResponse | null>(storedSession);
-  const [inviteCode, setInviteCode] = useState(initialCode);
-
-  if (session) {
-    return <Lobby session={session} onLeave={() => { setInviteCode(""); setSession(null); }} />;
-  }
-
-  return <EntryScreen initialCode={inviteCode} onSession={setSession} />;
+interface InitialRoute {
+  inviteCode: string;
+  session: RoomSessionResponse | null;
+  soloGameId: SoloGameId | null;
 }
 
-function EntryScreen({ initialCode, onSession }: { initialCode: string; onSession: (session: RoomSessionResponse) => void }) {
+export function App() {
+  const initialRoute = useMemo(readInitialRoute, []);
+  const [session, setSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? null : initialRoute.session);
+  const [soloResumeSession, setSoloResumeSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? initialRoute.session : null);
+  const [inviteCode, setInviteCode] = useState(initialRoute.inviteCode);
+  const [soloGameId, setSoloGameId] = useState<SoloGameId | null>(initialRoute.soloGameId);
+
+  if (soloResumeSession && soloGameId) {
+    return <SoloResumeGate
+      session={soloResumeSession}
+      gameId={soloGameId}
+      onValid={() => { setSession(soloResumeSession); setSoloResumeSession(null); }}
+      onInvalid={() => {
+        clearSoloSession(soloResumeSession, soloGameId);
+        setSoloResumeSession(null);
+        setSoloGameId(null);
+      }}
+      onCancel={() => {
+        clearSoloSession(soloResumeSession, soloGameId);
+        setSoloResumeSession(null);
+        setSoloGameId(null);
+      }}
+    />;
+  }
+
+  if (session) {
+    return <Lobby session={session} soloGameId={soloGameId} onLeave={() => {
+      setInviteCode("");
+      setSoloGameId(null);
+      setSession(null);
+    }} />;
+  }
+
+  return <EntryScreen
+    initialCode={inviteCode}
+    onRoomSession={(nextSession) => { setSoloGameId(null); setSession(nextSession); }}
+    onSoloSession={(nextSession, gameId) => { setSoloGameId(gameId); setSession(nextSession); }}
+  />;
+}
+
+function EntryScreen({ initialCode, onRoomSession, onSoloSession }: {
+  initialCode: string;
+  onRoomSession: (session: RoomSessionResponse) => void;
+  onSoloSession: (session: RoomSessionResponse, gameId: SoloGameId) => void;
+}) {
   const [mode, setMode] = useState<EntryMode>(initialCode ? "join" : "create");
   const [displayName, setDisplayName] = useState("");
   const [roomCode, setRoomCode] = useState(initialCode);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [soloError, setSoloError] = useState<string | null>(null);
+  const [soloSubmitting, setSoloSubmitting] = useState<SoloGameId | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -57,11 +96,27 @@ function EntryScreen({ initialCode, onSession }: { initialCode: string; onSessio
         : await joinRoom(parsedCode?.data ?? "", parsedName.data);
       localStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
       window.history.replaceState(null, "", `/?room=${encodeURIComponent(nextSession.roomCode)}`);
-      onSession(nextSession);
+      onRoomSession(nextSession);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const launchSolo = async (gameId: SoloGameId) => {
+    setSoloError(null);
+    setSoloSubmitting(gameId);
+    try {
+      const nextSession = await createRoom("Solo Player");
+      localStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
+      localStorage.setItem(soloRoomPointerStorageKey(gameId), nextSession.roomCode);
+      window.history.replaceState(null, "", `/?play=${encodeURIComponent(gameId)}`);
+      onSoloSession(nextSession, gameId);
+    } catch (caught) {
+      setSoloError(caught instanceof ApiError ? caught.message : "Something went wrong. Please try again.");
+    } finally {
+      setSoloSubmitting(null);
     }
   };
 
@@ -73,13 +128,36 @@ function EntryScreen({ initialCode, onSession }: { initialCode: string; onSessio
         <div className="brand-mark" aria-hidden="true"><span>TA</span></div>
         <p className="eyebrow">The breakroom, upgraded</p>
         <h1 id="page-title">TEAM<br /><span>ARCADE</span></h1>
-        <p className="hero-copy">Fast, friendly party games. Bring a name. Bring your team. Leave the login screen behind.</p>
+        <p className="hero-copy">Fast, friendly games for solo breaks and team play. Leave the login screen behind.</p>
         <div className="feature-pills" aria-label="Arcade features">
-          <span>2–12 players</span><span>No accounts</span><span>Play anywhere</span>
+          <span>1–12 players</span><span>No accounts</span><span>Play anywhere</span>
         </div>
       </section>
 
-      <section className="entry-panel" aria-label="Enter the arcade">
+      <div className="entry-actions">
+        <section className="solo-panel" aria-labelledby="single-player-title">
+          <div className="solo-panel-heading">
+            <div><p className="eyebrow">Play right now</p><h2 id="single-player-title">Single-player</h2></div>
+            <span>No room needed</span>
+          </div>
+          {SINGLE_PLAYER_GAME_CATALOG.map((game) => (
+            <button
+              className="solo-game-card"
+              type="button"
+              key={game.id}
+              disabled={soloSubmitting !== null}
+              onClick={() => void launchSolo(game.id)}
+              aria-label={`Play ${game.name} solo`}
+            >
+              <span className="solo-game-icon" aria-hidden="true">▦</span>
+              <span><strong>{game.name}</strong><small>{game.description}</small></span>
+              <span className="solo-game-meta">{game.duration}<b>{soloSubmitting === game.id ? "Opening…" : "Play now →"}</b></span>
+            </button>
+          ))}
+          <p className="solo-message" role="alert" aria-live="polite">{soloError}</p>
+        </section>
+
+        <section className="entry-panel" aria-label="Enter the arcade">
         <div className="mode-switch" role="group" aria-label="Room action">
           <button className={mode === "create" ? "active" : ""} type="button" onClick={() => setMode("create")}>Create room</button>
           <button className={mode === "join" ? "active" : ""} type="button" onClick={() => setMode("join")}>Join room</button>
@@ -95,7 +173,6 @@ function EntryScreen({ initialCode, onSession }: { initialCode: string; onSessio
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
             placeholder="How should we call you?"
-            autoFocus
           />
           {mode === "join" && (
             <>
@@ -116,14 +193,30 @@ function EntryScreen({ initialCode, onSession }: { initialCode: string; onSessio
             {submitting ? "Opening…" : mode === "create" ? "Create game" : "Join the fun"}
           </button>
         </form>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
 
-function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: () => void }) {
-  const { room, game, status, message, commandPending, send } = useRoomSocket(session.roomCode, session.sessionToken);
+export function Lobby({ session, soloGameId, onLeave }: {
+  session: RoomSessionResponse;
+  soloGameId: SoloGameId | null;
+  onLeave: () => void;
+}) {
+  const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(
+    session.roomCode,
+    session.sessionToken,
+    soloGameId !== null
+  );
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const soloRequestIds = useRef<SoloLaunchRequestIds | null>(null);
+  if (!soloRequestIds.current) {
+    soloRequestIds.current = {
+      select: `solo-select:${crypto.randomUUID()}`,
+      start: `solo-start:${crypto.randomUUID()}`
+    };
+  }
   const self = room?.players.find((player) => player.id === session.playerId);
   const host = room?.players.find((player) => player.isHost);
   const joinUrl = `${window.location.origin}/?room=${session.roomCode}`;
@@ -142,16 +235,33 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
     window.setTimeout(() => setCopyStatus(null), 2_500);
   };
 
-  const leave = () => {
+  const leave = useCallback(() => {
     localStorage.removeItem(sessionStorageKey(session.roomCode));
+    if (soloGameId) localStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
     window.history.replaceState(null, "", "/");
     onLeave();
-  };
+  }, [onLeave, session.roomCode, soloGameId]);
+
+  useEffect(() => {
+    if (!soloGameId || status !== "connected") return;
+    const command = nextSoloLaunchCommand({
+      gameId: soloGameId,
+      room,
+      hasGame: game !== null,
+      commandPending,
+      requestIds: soloRequestIds.current as SoloLaunchRequestIds
+    });
+    if (command) send(command);
+  }, [commandPending, game, room, send, soloGameId, status]);
+
+  useEffect(() => {
+    if (soloGameId && fatalSession) leave();
+  }, [fatalSession, leave, soloGameId]);
 
   return (
-    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${game?.gameId === "afterprint" ? "afterprint-room" : ""}`}>
+    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""}`}>
       <header className="lobby-header">
-        <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); leave(); }} aria-label="Leave room and return home">
+        <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); leave(); }} aria-label={soloGameId ? "Return to the main page" : "Leave room and return home"}>
           <span>TA</span><strong>Team Arcade</strong>
         </a>
         <div className={`connection-badge ${status}`} role="status" aria-live="polite">
@@ -159,7 +269,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         </div>
       </header>
 
-      {game?.gameId !== "afterprint" && <section className="room-banner">
+      {!soloGameId && game?.gameId !== "afterprint" && <section className="room-banner">
         <div>
           <p className="eyebrow">Room code</p>
           <h1>{session.roomCode}</h1>
@@ -176,7 +286,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
         </button>
       </section>}
 
-      {(status !== "connected" || message) && (
+      {(status !== "connected" || message) && (!soloGameId || game) && (
         <div className="status-panel" role="alert">
           <strong>{status === "offline" ? "You’re offline." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
           <span>{message ?? (status === "offline" ? "We’ll reconnect when your network returns." : "Your seat is saved while we reconnect.")}</span>
@@ -184,7 +294,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
       )}
 
       <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""}`}>
-        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
+        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
             {!self?.isHost && <span className="host-note">{host?.connected === false ? "Host disconnected — holding their seat" : `${host?.displayName ?? "The host"} is choosing`}</span>}
@@ -222,7 +332,7 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
           )}
         </section>}
 
-        {game?.gameId !== "afterprint" && <aside className="players-panel" aria-labelledby="players-title">
+        {!soloGameId && game?.gameId !== "afterprint" && <aside className="players-panel" aria-labelledby="players-title">
           <div className="players-heading">
             <div><p className="eyebrow">The crew</p><h2 id="players-title">Players</h2></div>
             <span className="player-count">{room?.players.length ?? 0}/12</span>
@@ -241,9 +351,112 @@ function Lobby({ session, onLeave }: { session: RoomSessionResponse; onLeave: ()
           <button className="text-button" type="button" onClick={leave}>Leave room</button>
         </aside>}
       </div>
-      <p className="sr-only" aria-live="polite">{room ? `${room.players.filter((player) => player.connected).length} players connected.` : "Connecting to room."}</p>
+      <p className="sr-only" aria-live="polite">{soloGameId
+        ? game ? "Solo game ready." : "Preparing solo game."
+        : room ? `${room.players.filter((player) => player.connected).length} players connected.` : "Connecting to room."}</p>
     </main>
   );
+}
+
+function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
+  session: RoomSessionResponse;
+  gameId: SoloGameId;
+  onValid: () => void;
+  onInvalid: () => void;
+  onCancel: () => void;
+}) {
+  const [checking, setChecking] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const check = useCallback(async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      await validateRoomSession(session.roomCode, session.sessionToken);
+      onValid();
+    } catch (caught) {
+      if (isTerminalRoomSessionError(caught)) {
+        onInvalid();
+        return;
+      }
+      setError(caught instanceof ApiError ? caught.message : "This session could not be restored.");
+      setChecking(false);
+    }
+  }, [onInvalid, onValid, session.roomCode, session.sessionToken]);
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void check();
+  }, [check]);
+
+  return (
+    <main className="lobby-shell afterprint-room">
+      <header className="lobby-header">
+        <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); onCancel(); }} aria-label="Return to the main page">
+          <span>TA</span><strong>Team Arcade</strong>
+        </a>
+        <div className={`connection-badge ${error ? "error" : "connecting"}`} role="status" aria-live="polite">
+          <i aria-hidden="true" /> {error ? "Needs attention" : "Restoring…"}
+        </div>
+      </header>
+      <div className="lobby-layout">
+        <SoloLaunchScreen
+          gameId={gameId}
+          status={error ? "error" : "connecting"}
+          message={error ?? (checking ? "Checking your saved puzzle…" : null)}
+          onCancel={onCancel}
+          onRetry={error ? () => { void check(); } : undefined}
+        />
+      </div>
+      <p className="sr-only" aria-live="polite">Restoring solo game.</p>
+    </main>
+  );
+}
+
+function SoloLaunchScreen({ gameId, status, message, onCancel, onRetry }: {
+  gameId: SoloGameId;
+  status: ReturnType<typeof useRoomSocket>["status"];
+  message: string | null;
+  onCancel: () => void;
+  onRetry?: (() => void) | undefined;
+}) {
+  const game = SINGLE_PLAYER_GAME_CATALOG.find((candidate) => candidate.id === gameId);
+  const statusCopy = status === "offline"
+    ? "You are offline. We will continue when your connection returns."
+    : status === "reconnecting"
+      ? "Restoring your puzzle…"
+      : status === "error"
+        ? "This solo session could not be restored."
+        : "Preparing today’s trace…";
+  return (
+    <section className="solo-launch" aria-labelledby="solo-launch-title">
+      <span className="solo-launch-icon" aria-hidden="true">▦</span>
+      <p className="eyebrow">Single-player</p>
+      <h1 id="solo-launch-title">Opening {game?.name ?? "game"}</h1>
+      <p role="status" aria-live="polite">{message ?? statusCopy}</p>
+      {onRetry && <button className="primary-button solo-retry" type="button" onClick={onRetry}>Try again</button>}
+      <button className="text-button" type="button" onClick={onCancel}>Return to main page</button>
+    </section>
+  );
+}
+
+function readInitialRoute(): InitialRoute {
+  const params = new URLSearchParams(window.location.search);
+  const inviteCode = roomCodeSchema.safeParse(params.get("room") ?? "").data ?? "";
+  if (inviteCode) return { inviteCode, session: readStoredSession(inviteCode), soloGameId: null };
+
+  const requestedGameId = params.get("play");
+  const soloGame = SINGLE_PLAYER_GAME_CATALOG.find((game) => game.id === requestedGameId);
+  if (!soloGame) return { inviteCode: "", session: null, soloGameId: null };
+  const pointer = localStorage.getItem(soloRoomPointerStorageKey(soloGame.id)) ?? "";
+  const roomCode = roomCodeSchema.safeParse(pointer).data;
+  const session = roomCode ? readStoredSession(roomCode) : null;
+  if (session) return { inviteCode: "", session, soloGameId: soloGame.id };
+  localStorage.removeItem(soloRoomPointerStorageKey(soloGame.id));
+  if (roomCode) localStorage.removeItem(sessionStorageKey(roomCode));
+  window.history.replaceState(null, "", "/");
+  return { inviteCode: "", session: null, soloGameId: null };
 }
 
 function readStoredSession(roomCode: string): RoomSessionResponse | null {
@@ -257,6 +470,12 @@ function readStoredSession(roomCode: string): RoomSessionResponse | null {
   } catch {
     return null;
   }
+}
+
+function clearSoloSession(session: RoomSessionResponse, gameId: SoloGameId): void {
+  localStorage.removeItem(sessionStorageKey(session.roomCode));
+  localStorage.removeItem(soloRoomPointerStorageKey(gameId));
+  window.history.replaceState(null, "", "/");
 }
 
 function initials(displayName: string): string {

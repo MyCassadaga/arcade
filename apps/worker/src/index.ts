@@ -1,6 +1,7 @@
 import {
   createRoomRequestSchema,
   joinRoomRequestSchema,
+  roomSessionRequestSchema,
   roomCodeSchema,
   type ErrorCode
 } from "@team-arcade/shared";
@@ -52,7 +53,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return jsonError("SERVER_ERROR", "Could not allocate a room code. Please try again.", 503);
   }
 
-  const match = url.pathname.match(/^\/api\/rooms\/([^/]+)\/(join|socket)$/u);
+  const match = url.pathname.match(/^\/api\/rooms\/([^/]+)\/(join|session|socket)$/u);
   if (match) {
     const parsedCode = roomCodeSchema.safeParse(match[1]);
     if (!parsedCode.success) return jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
@@ -64,6 +65,18 @@ async function route(request: Request, env: Env): Promise<Response> {
       const parsed = joinRoomRequestSchema.safeParse(body);
       if (!parsed.success) return jsonError("INVALID_NAME", parsed.error.issues[0]?.message ?? "Invalid display name.", 400);
       return stub.fetch("https://room.internal/internal/join", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(parsed.data)
+      });
+    }
+
+    if (match[2] === "session" && request.method === "POST") {
+      const body = await readJson(request);
+      if (body === PAYLOAD_TOO_LARGE) return jsonError("INVALID_COMMAND", "Request payload is too large.", 413);
+      const parsed = roomSessionRequestSchema.safeParse(body);
+      if (!parsed.success) return jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
+      return stub.fetch("https://room.internal/internal/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(parsed.data)

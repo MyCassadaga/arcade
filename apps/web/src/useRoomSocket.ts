@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, RoomView, ServerMessage, TypedGameViewerState } from "@team-arcade/shared";
+import { ApiError, isTerminalRoomSessionError, validateRoomSession } from "./api";
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "error";
 
@@ -8,15 +9,21 @@ interface RoomSocketState {
   game: TypedGameViewerState | null;
   status: ConnectionStatus;
   message: string | null;
+  fatalSession: boolean;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
 }
 
-export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocketState {
+export function useRoomSocket(
+  roomCode: string,
+  sessionToken: string,
+  revalidateOpaqueFailures = false
+): RoomSocketState {
   const [room, setRoom] = useState<RoomView | null>(null);
   const [game, setGame] = useState<TypedGameViewerState | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [message, setMessage] = useState<string | null>(null);
+  const [fatalSession, setFatalSession] = useState(false);
   const [commandPending, setCommandPending] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRequestIdsRef = useRef(new Set<string>());
@@ -67,6 +74,7 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
           if (serverMessage.payload.roomPhase === "lobby") setGame(null);
           setStatus("connected");
           setMessage(null);
+          setFatalSession(false);
           attempt = 0;
         } else if (serverMessage.type === "game.state") {
           setGame(serverMessage.payload as TypedGameViewerState);
@@ -77,21 +85,49 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
           setMessage(serverMessage.payload.message);
           if (["INVALID_SESSION", "ROOM_EXPIRED", "ROOM_NOT_FOUND"].includes(serverMessage.payload.code)) {
             fatal = true;
+            setFatalSession(true);
             setStatus("error");
           }
         }
       });
 
-      socket.addEventListener("close", () => {
+      const handleClose = async (event: CloseEvent) => {
         if (disposed || fatal) return;
         pendingRequestIdsRef.current.clear();
         setCommandPending(false);
         window.clearInterval(heartbeatTimer);
-        attempt += 1;
+        if (isTerminalSessionClose(event.code, event.reason)) {
+          fatal = true;
+          setMessage("This session is no longer available.");
+          setFatalSession(true);
+          setStatus("error");
+          return;
+        }
         setStatus(navigator.onLine ? "reconnecting" : "offline");
+        if (revalidateOpaqueFailures && event.code === 1006 && navigator.onLine) {
+          try {
+            await validateRoomSession(roomCode, sessionToken);
+          } catch (caught) {
+            if (disposed || fatal) return;
+            if (isTerminalRoomSessionError(caught)) {
+              fatal = true;
+              setMessage(caught.message);
+              setFatalSession(true);
+              setStatus("error");
+              return;
+            }
+            if (caught instanceof ApiError) setMessage(caught.message);
+          }
+        }
+        if (disposed || fatal) return;
+        attempt += 1;
         const baseDelay = Math.min(10_000, 500 * 2 ** Math.min(attempt, 5));
         const delay = baseDelay * (0.75 + Math.random() * 0.5);
         reconnectTimer = window.setTimeout(connect, delay);
+      };
+
+      socket.addEventListener("close", (event: CloseEvent) => {
+        void handleClose(event);
       });
 
       heartbeatTimer = window.setInterval(() => {
@@ -128,7 +164,7 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [finishRequest, roomCode, sessionToken]);
+  }, [finishRequest, revalidateOpaqueFailures, roomCode, sessionToken]);
 
   const send = useCallback((clientMessage: ClientMessage): boolean => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -144,5 +180,10 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
     return true;
   }, []);
 
-  return { room, game, status, message, commandPending, send };
+  return { room, game, status, message, fatalSession, commandPending, send };
+}
+
+export function isTerminalSessionClose(code: number, reason: string): boolean {
+  return (code === 1008 && ["Room unavailable", "Invalid session"].includes(reason))
+    || (code === 1001 && reason === "Room expired");
 }

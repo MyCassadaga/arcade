@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
-import { GAME_CATALOG, PUBLIC_GAME_CATALOG } from "./catalog";
+import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema, roomSessionRequestSchema } from "./protocol";
+import { GAME_CATALOG, PUBLIC_GAME_CATALOG, SINGLE_PLAYER_GAME_CATALOG } from "./catalog";
 
 describe("shared protocol validation", () => {
   it("normalizes valid room codes and rejects ambiguous characters", () => {
@@ -11,6 +11,13 @@ describe("shared protocol validation", () => {
   it("trims names and enforces the documented length", () => {
     expect(displayNameSchema.parse("  Ada  ")).toBe("Ada");
     expect(displayNameSchema.safeParse("x".repeat(25)).success).toBe(false);
+  });
+
+  it("bounds stored-session validation tokens", () => {
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(32) }).success).toBe(true);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "short" }).success).toBe(false);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(201) }).success).toBe(false);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(32), extra: true }).success).toBe(false);
   });
 
   it("rejects unknown and malformed WebSocket commands", () => {
@@ -45,6 +52,8 @@ describe("shared protocol validation", () => {
   it("publishes only public games in the arcade catalog", () => {
     expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor", "categories", "afterprint"]);
     expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
+    expect(SINGLE_PLAYER_GAME_CATALOG.map((game) => game.id)).toEqual(["afterprint"]);
+    expect(SINGLE_PLAYER_GAME_CATALOG.every((game) => game.playMode === "single-player")).toBe(true);
   });
 
   it("strictly validates AFTERPRINT identity and five-event permutations", () => {

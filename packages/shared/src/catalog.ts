@@ -6,6 +6,7 @@ export const GAME_CATALOG = [
     duration: "15–20 min",
     playerRange: "3–12 players",
     icon: "speech",
+    playMode: "room",
     availability: "public"
   },
   {
@@ -15,6 +16,7 @@ export const GAME_CATALOG = [
     duration: "15–20 min",
     playerRange: "4–12 players",
     icon: "mask",
+    playMode: "room",
     availability: "public"
   },
   {
@@ -24,6 +26,7 @@ export const GAME_CATALOG = [
     duration: "5–10 min",
     playerRange: "2–12 players",
     icon: "categories",
+    playMode: "room",
     availability: "public"
   },
   {
@@ -33,6 +36,7 @@ export const GAME_CATALOG = [
     duration: "2–4 min",
     playerRange: "1 player",
     icon: "afterprint",
+    playMode: "single-player",
     availability: "public"
   },
   {
@@ -42,6 +46,7 @@ export const GAME_CATALOG = [
     duration: "15–20 min",
     playerRange: "1–4 players",
     icon: "terminal",
+    playMode: "room",
     availability: "hidden"
   }
 ] as const;
@@ -50,6 +55,10 @@ export type GameId = (typeof GAME_CATALOG)[number]["id"];
 
 export const PUBLIC_GAME_CATALOG: readonly (typeof GAME_CATALOG)[number][] = GAME_CATALOG.filter(
   (game) => game.availability === "public"
+);
+
+export const SINGLE_PLAYER_GAME_CATALOG = PUBLIC_GAME_CATALOG.filter(
+  (game) => game.playMode === "single-player"
 );
 
 export const GAME_IDS = GAME_CATALOG.map((game) => game.id) as [GameId, ...GameId[]];
