@@ -27,6 +27,15 @@ export const GAME_CATALOG = [
     availability: "public"
   },
   {
+    id: "afterprint",
+    name: "AFTERPRINT",
+    description: "Reconstruct five events from the trace they left behind.",
+    duration: "2–4 min",
+    playerRange: "1 player",
+    icon: "afterprint",
+    availability: "public"
+  },
+  {
     id: "system-crawl",
     name: "System Crawl",
     description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",

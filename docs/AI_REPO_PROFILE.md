@@ -55,8 +55,8 @@
 - **Production environment:** Cloudflare Worker named `team-arcade`, with static assets and the `ROOMS` Durable Object binding; account and deployed URL/domain are `UNKNOWN — VERIFY`.
 - **Deployment mechanism:** A Cloudflare-side integration automatically deploys the `team-arcade` Worker after merges/pushes to `main`, independently of the tracked GitHub Actions deploy job. The tracked job also deploys on `main` when `CLOUDFLARE_DEPLOY_ENABLED == true`, after validation/E2E; manual `npm run deploy` remains available.
 - **Merge/deployment coupling:** `COUPLED` — merging or pushing to `main` triggers the external automatic Cloudflare production deployment. Treat authorization to merge to `main` and that automatic deployment consequence as one production-affecting action set.
-- **Deployment identity / verification method:** Cloudflare deployment history records the resulting Wrangler version, and GitHub identifies the merge commit, but no tracked procedure deterministically maps an exact Git SHA to the Cloudflare version; `UNKNOWN — VERIFY`.
-- **Post-deployment smoke-check location or runbook:** `UNKNOWN — VERIFY`; no tracked production smoke-check procedure was found.
+- **Deployment identity / verification method:** `VERIFIED` from the Cloudflare GitHub App check on exact main SHA `b158c51d7bae4e75d40fd9dcafd0be8ddff9038b` (check run `101558292373`). A completed-success `Workers Builds: team-arcade` check is attached to `head_sha` and its output records the Cloudflare Build ID and Version ID. Query the exact resulting main SHA check runs after an authorized merge and record those two IDs; do not treat the separately skipped GitHub Actions `deploy` job as the deployment receipt.
+- **Post-deployment smoke-check location or runbook:** The bounded repository-visible postcheck is the exact-main-SHA Cloudflare `Workers Builds: team-arcade` check above plus successful main-branch CI. No public production hostname is tracked, so a direct live HTTP smoke is not part of the repository-defined postcheck unless the human separately supplies and authorizes the exact target.
 
 ## Data stores and persistent state
 
@@ -93,7 +93,7 @@
 - **Authenticated operator path and any repository-defined access gate:** Local deployment uses an external `npx wrangler login`; CI uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub `production` environment and the `CLOUDFLARE_DEPLOY_ENABLED` repository variable. Actual environment reviewers are `UNKNOWN — VERIFY`.
 - **Merge method and exact reviewed-SHA preservation:** A GitHub merge commit guarded by the reviewed head SHA preserves that reviewed commit as a parent, while producing a distinct merge SHA; tracked files do not define allowed merge strategies or branch-protection rules.
 - **Merge/deployment coupling and automatic-deploy trigger:** `COUPLED` — a merge/push to `main` was observed to create a Cloudflare Wrangler deployment even while the tracked GitHub Actions `deploy` job was skipped. Release authorization must cover the merge and automatic production deployment together, followed by bounded verification.
-- **Deployment identity and postcheck evidence:** `UNKNOWN — VERIFY`; no tracked exact-SHA deployment receipt or production postcheck procedure exists.
+- **Deployment identity and postcheck evidence:** After an authorized guarded merge, query GitHub check runs for the exact resulting main SHA. Require the `cloudflare-workers-and-pages` app check named `Workers Builds: team-arcade` to complete successfully and record its Build ID and Version ID, then require ordinary main CI to pass. This bounded read-only GitHub postcheck does not access Cloudflare production data or exercise an unknown live hostname.
 - **Reusable read-only production diagnostic boundary, if any:** None defined. Any production read requires separate, bounded authorization.
 
 ## Repository-specific instructions

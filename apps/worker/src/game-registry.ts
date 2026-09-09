@@ -1,16 +1,17 @@
 import { GameRuleError } from "@team-arcade/game-core";
 import type { GameContext, GameResult, ViewerContext } from "@team-arcade/game-core";
 import {
-  advanceCategories, advanceImpostor, advanceWhoSaidThat,
-  createCategoriesState, createImpostorState, createWhoSaidThatState,
+  advanceAfterprint, advanceCategories, advanceImpostor, advanceWhoSaidThat,
+  createAfterprintState, createCategoriesState, createImpostorState, createWhoSaidThatState,
+  getAfterprintPrivateView, getAfterprintPublicView,
   getCategoriesPrivateView, getCategoriesPublicView,
   getImpostorPrivateView, getImpostorPublicView,
   getWhoSaidThatPrivateView, getWhoSaidThatPublicView,
-  handleCategoriesCommand, handleImpostorCommand, handleWhoSaidThatCommand,
-  type CategoriesState, type ImpostorState, type WhoSaidThatState
+  handleAfterprintCommand, handleCategoriesCommand, handleImpostorCommand, handleWhoSaidThatCommand,
+  type AfterprintState, type CategoriesState, type ImpostorState, type WhoSaidThatState
 } from "@team-arcade/games";
 import {
-  categoriesCommandSchema, impostorCommandSchema, whoSaidThatCommandSchema,
+  afterprintCommandSchema, categoriesCommandSchema, impostorCommandSchema, whoSaidThatCommandSchema,
   type GameCommand, type TypedGameViewerState
 } from "@team-arcade/shared";
 import type { z } from "zod";
@@ -19,6 +20,7 @@ interface PartyStates {
   "who-said-that": WhoSaidThatState;
   impostor: ImpostorState;
   categories: CategoriesState;
+  afterprint: AfterprintState;
 }
 type PartyGameId = keyof PartyStates;
 export type StoredPartyGame = { [K in PartyGameId]: { gameId: K; state: PartyStates[K] } }[PartyGameId];
@@ -78,6 +80,13 @@ export const GAME_REGISTRY = {
     store: (state) => ({ gameId: "categories", state }),
     project: (state, viewer) => ({ gameId: "categories", phase: state.phase,
       public: getCategoriesPublicView(state), private: getCategoriesPrivateView(state, viewer) })
+  }),
+  afterprint: adapter({
+    create: (context) => createAfterprintState(context, crypto.randomUUID()), schema: afterprintCommandSchema,
+    command: handleAfterprintCommand, advance: advanceAfterprint,
+    store: (state) => ({ gameId: "afterprint", state }),
+    project: (state, viewer) => ({ gameId: "afterprint", phase: state.phase,
+      public: getAfterprintPublicView(state), private: getAfterprintPrivateView(state, viewer) })
   })
 } satisfies { [K in PartyGameId]: { create(context: GameContext): StoredPartyGame; bind(state: PartyStates[K]): BoundAdapter } };
 
@@ -90,5 +99,6 @@ export function bindGame(game: StoredPartyGame): BoundAdapter {
     case "who-said-that": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "impostor": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "categories": return GAME_REGISTRY[game.gameId].bind(game.state);
+    case "afterprint": return GAME_REGISTRY[game.gameId].bind(game.state);
   }
 }

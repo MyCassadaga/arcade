@@ -161,7 +161,40 @@ export const categoriesCommandSchema = z.object({
 }).strict();
 export type CategoriesCommand = z.infer<typeof categoriesCommandSchema>;
 
+export const AFTERPRINT_EVENT_IDS = ["A", "B", "C", "D", "E"] as const;
+export const AFTERPRINT_INKS = ["coral", "blue", "gold", "plum"] as const;
+export const afterprintEventIdSchema = z.enum(AFTERPRINT_EVENT_IDS);
+export const afterprintInkSchema = z.enum(AFTERPRINT_INKS);
+export const afterprintBoardSchema = z.array(afterprintInkSchema.nullable()).length(25);
+const afterprintCellSchema = z.number().int().min(0).max(24);
+const afterprintPathSchema = z.array(afterprintCellSchema).min(2).max(5);
+
+export const afterprintEventSchema = z.discriminatedUnion("kind", [
+  z.object({ id: afterprintEventIdSchema, kind: z.literal("drop"), cell: afterprintCellSchema, ink: afterprintInkSchema }).strict(),
+  z.object({ id: afterprintEventIdSchema, kind: z.literal("roll"), path: afterprintPathSchema }).strict(),
+  z.object({ id: afterprintEventIdSchema, kind: z.literal("wipe"), path: afterprintPathSchema }).strict()
+]);
+
+const afterprintOrderSchema = z.array(afterprintEventIdSchema).length(5).superRefine((ids, context) => {
+  if (new Set(ids).size !== AFTERPRINT_EVENT_IDS.length) {
+    context.addIssue({ code: "custom", message: "Use every AFTERPRINT event exactly once." });
+  }
+});
+
+export const afterprintCommandSchema = z.object({
+  type: z.literal("afterprint.submitOrder"),
+  gameInstanceId: z.string().uuid(),
+  puzzleNumber: z.number().int().min(1),
+  eventIds: afterprintOrderSchema
+}).strict();
+export type AfterprintCommand = z.infer<typeof afterprintCommandSchema>;
+export type AfterprintEventId = z.infer<typeof afterprintEventIdSchema>;
+export type AfterprintInk = z.infer<typeof afterprintInkSchema>;
+export type AfterprintBoard = Array<AfterprintInk | null>;
+export type AfterprintEvent = z.infer<typeof afterprintEventSchema>;
+
 export const gameCommandSchema = z.union([
+  afterprintCommandSchema,
   categoriesCommandSchema,
   whoSaidThatCommandSchema,
   impostorCommandSchema,
@@ -230,7 +263,7 @@ export interface RoomView {
 }
 
 export interface GameViewerState {
-  gameId: "who-said-that" | "impostor" | "categories" | "system-crawl";
+  gameId: "who-said-that" | "impostor" | "categories" | "afterprint" | "system-crawl";
   phase: string;
   public: unknown;
   private?: unknown;
@@ -322,7 +355,31 @@ export interface CategoriesPrivateView {
   submittedAnswer?: string;
 }
 
+export interface AfterprintAttemptView {
+  eventIds: AfterprintEventId[];
+  mismatchCount: number;
+  solved: boolean;
+}
+
+export interface AfterprintPublicView {
+  gameInstanceId: string;
+  puzzleNumber: number;
+  bankVersion: string;
+  target: AfterprintBoard;
+  events: AfterprintEvent[];
+  initialEventIds: AfterprintEventId[];
+  attempts: AfterprintAttemptView[];
+  maxAttempts: 4;
+  activePlayerId: string;
+  solved: boolean;
+}
+
+export interface AfterprintPrivateView {
+  canSubmit: boolean;
+}
+
 export type TypedGameViewerState =
+  | { gameId: "afterprint"; phase: "playing" | "gameResults"; public: AfterprintPublicView; private: AfterprintPrivateView }
   | { gameId: "categories"; phase: "submitting" | "reveal" | "roundResults" | "gameResults"; public: CategoriesPublicView; private: CategoriesPrivateView }
   | { gameId: "who-said-that"; phase: "submitting" | "guessing" | "reveal" | "roundResults" | "gameResults"; public: WhoSaidThatPublicView; private: WhoSaidThatPrivateView }
   | { gameId: "impostor"; phase: "roleReveal" | "clueSubmission" | "clueReveal" | "discussion" | "voting" | "voteReveal" | "impostorGuess" | "roundResults" | "gameResults"; public: ImpostorPublicView; private: ImpostorPrivateView }

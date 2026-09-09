@@ -59,11 +59,11 @@ Owns:
 
 ### Party-game registry and presentation
 
-`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, and Categories. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; Categories adds a discriminant without changing SQLite tables.
+`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, Categories, and AFTERPRINT. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; new games add discriminants without changing SQLite tables.
 
 System Crawl stays hidden and uses its existing separate routing; it is outside this refactor.
 
-`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels.
+`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels. AFTERPRINT has a compact solo screen that reuses the pure simulator for visual replay while the Worker remains authoritative for attempts and completion.
 
 ### Game modules
 Own:
