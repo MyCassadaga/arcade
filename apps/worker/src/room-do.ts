@@ -1,6 +1,17 @@
 import { DurableObject } from "cloudflare:workers";
 import { GameRuleError } from "@team-arcade/game-core";
-import { SystemCrawlRuleError, type SystemCrawlState } from "@team-arcade/games";
+import {
+  SystemCrawlRuleError,
+  advanceShirtFightDue,
+  canViewerAccessShirtFightDrawing,
+  deterministicUuid,
+  missingShirtFightDrawings,
+  registerShirtFightDrawing,
+  type ShirtFightDrawing,
+  type ShirtFightFallbackDrawing,
+  type ShirtFightState,
+  type SystemCrawlState
+} from "@team-arcade/games";
 import { GAME_REGISTRY, bindGame, isRegisteredGame, type StoredPartyGame } from "./game-registry";
 import {
   MAX_PLAYERS,
@@ -34,6 +45,11 @@ const HOST_GRACE_MS = 60_000;
 const ROOM_EXPIRY_MS = 12 * 60 * 60 * 1_000;
 const RECENT_REQUEST_LIMIT = 50;
 const MAX_WEBSOCKET_MESSAGE_BYTES = 4_096;
+const MAX_DRAWING_BYTES = 160_000;
+const DRAWING_RETENTION_MS = 24 * 60 * 60 * 1_000;
+const CLEANUP_RETRY_BASE_MS = 60_000;
+const CLEANUP_RETRY_MAX_MS = 60 * 60 * 1_000;
+const FALLBACK_WEBP = "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEALmk0mk0iIiIiIgBoSygABc6zbAAA";
 
 interface SocketAttachment {
   playerId?: string;
@@ -53,6 +69,23 @@ interface PlayerRow {
 
 interface StateRow {
   json_value: string;
+}
+
+interface ShirtFightAssetEntry {
+  drawingId: string;
+  objectKey: string;
+  gameInstanceId: string;
+  playerId: string;
+  round: 1 | 2;
+  drawingNumber: 1 | 2;
+  status: "reserved" | "finalized";
+  createdAt: number;
+  cleanupAt?: number;
+  retryCount: number;
+}
+
+interface ShirtFightAssetManifest {
+  entries: ShirtFightAssetEntry[];
 }
 
 interface NewPlayer {
@@ -118,6 +151,13 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
     if (request.method === "GET" && url.pathname === "/internal/socket") {
       return this.openSocket(request);
+    }
+    if (request.method === "POST" && url.pathname === "/internal/shirt-fight/drawings") {
+      return this.ctx.blockConcurrencyWhile(() => this.uploadShirtFightDrawing(request));
+    }
+    const assetMatch = url.pathname.match(/^\/internal\/shirt-fight\/assets\/([0-9a-f-]{36})$/u);
+    if (request.method === "GET" && assetMatch?.[1]) {
+      return this.readShirtFightDrawing(request, assetMatch[1]);
     }
     return jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
   }
@@ -208,6 +248,95 @@ export class RoomDurableObject extends DurableObject<Env> {
     return player
       ? Response.json({ valid: true })
       : jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
+  }
+
+  private async uploadShirtFightDrawing(request: Request): Promise<Response> {
+    const metadata = await this.activeMetadata();
+    if (metadata instanceof Response) return metadata;
+    const player = await this.authenticateHttp(request);
+    if (player instanceof Response) return player;
+    await this.reconcileShirtFightDue(Date.now(), true);
+    const game = this.readGame();
+    if (game?.gameId !== "shirt-fight" || game.state.phase !== "drawing" || game.state.drawingNumber === undefined || game.state.generationRound === 3) {
+      return jsonError("STALE_PHASE", "Drawing uploads are closed.", 409);
+    }
+    if (!game.state.playerIds.includes(player.id)) return jsonError("PLAYER_NOT_ACTIVE", "You are not active in this game.", 403);
+    if (missingShirtFightDrawings(game.state).every((slot) => slot.playerId !== player.id)) {
+      return jsonError("ALREADY_SUBMITTED", "That drawing is already finalized.", 409);
+    }
+    const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (contentType !== "image/webp") return jsonError("INVALID_COMMAND", "Drawings must be WebP images.", 415);
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is too large.", 413);
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength < 20 || bytes.byteLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is invalid or too large.", 413);
+    const dimensions = readWebpDimensions(bytes);
+    if (!dimensions || dimensions.width !== 600 || dimensions.height !== 800) {
+      return jsonError("INVALID_COMMAND", "Drawings must be a 600 by 800 WebP image.", 400);
+    }
+
+    const slot = { playerId: player.id, round: game.state.generationRound, drawingNumber: game.state.drawingNumber };
+    const entry = this.ensureAssetReservation(metadata.roomCode, game.state, slot.playerId, slot.round, slot.drawingNumber);
+    await this.env.SHIRT_FIGHT_DRAWINGS.put(entry.objectKey, bytes, {
+      httpMetadata: { contentType: "image/webp", cacheControl: "private, no-store" },
+      customMetadata: { drawingId: entry.drawingId, gameInstanceId: entry.gameInstanceId }
+    });
+    const confirmed = await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey);
+    if (!confirmed) return jsonError("SERVER_ERROR", "The drawing could not be confirmed. Try again.", 503);
+    const now = Date.now();
+    const drawing: ShirtFightDrawing = {
+      id: entry.drawingId,
+      artistPlayerId: player.id,
+      round: slot.round,
+      drawingNumber: slot.drawingNumber,
+      createdAt: now,
+      durationMs: Math.max(0, now - game.state.phaseStartedAt),
+      width: 600,
+      height: 800,
+      byteLength: bytes.byteLength,
+      mediaType: "image/webp",
+      fallback: false
+    };
+    const result = registerShirtFightDrawing(game.state, drawing, now);
+    this.ctx.storage.transactionSync(() => {
+      this.writeGame({ gameId: "shirt-fight", state: result.state });
+      this.updateAssetEntry(entry.drawingId, (item) => ({ ...item, status: "finalized" }));
+    });
+    this.broadcastGameState();
+    await this.scheduleAlarm();
+    return Response.json({ drawingId: entry.drawingId }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  }
+
+  private async readShirtFightDrawing(request: Request, drawingId: string): Promise<Response> {
+    const metadata = await this.activeMetadata();
+    if (metadata instanceof Response) return metadata;
+    const player = await this.authenticateHttp(request);
+    if (player instanceof Response) return player;
+    await this.reconcileShirtFightDue(Date.now(), true);
+    const game = this.readGame();
+    if (game?.gameId !== "shirt-fight" || !canViewerAccessShirtFightDrawing(game.state, player.id, drawingId)) {
+      return jsonError("INVALID_COMMAND", "That drawing is not available to you.", 404);
+    }
+    const entry = this.readAssetManifest().entries.find((item) => item.drawingId === drawingId && item.status === "finalized" && item.gameInstanceId === game.state.gameInstanceId);
+    if (!entry) return jsonError("INVALID_COMMAND", "That drawing is not available to you.", 404);
+    const object = await this.env.SHIRT_FIGHT_DRAWINGS.get(entry.objectKey);
+    if (!object) return jsonError("SERVER_ERROR", "That drawing is temporarily unavailable.", 503);
+    return new Response(object.body, {
+      headers: {
+        "Content-Type": object.httpMetadata?.contentType ?? "image/webp",
+        "Content-Length": String(object.size),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
+  }
+
+  private async authenticateHttp(request: Request): Promise<StoredPlayer | Response> {
+    const match = request.headers.get("authorization")?.match(/^Bearer ([A-Za-z0-9_-]{32,200})$/u);
+    if (!match?.[1]) return jsonError("INVALID_SESSION", "A valid room session is required.", 401);
+    const tokenHash = await hashSessionToken(match[1]);
+    const player = this.readPlayers().find((candidate) => candidate.sessionTokenHash === tokenHash);
+    return player ?? jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
   }
 
   private openSocket(request: Request): Response {
@@ -307,12 +436,24 @@ export class RoomDurableObject extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    const metadata = this.readMetadata();
+    let metadata = this.readMetadata();
     if (!metadata) return;
     const now = Date.now();
-    if (now - metadata.lastActivityAt >= ROOM_EXPIRY_MS) {
+    if (metadata.expiredAt === undefined && now - metadata.lastActivityAt >= ROOM_EXPIRY_MS) {
       for (const socket of this.ctx.getWebSockets()) socket.close(1001, "Room expired");
-      await this.ctx.storage.deleteAll();
+      metadata = { ...metadata, expiredAt: now };
+      this.ctx.storage.transactionSync(() => {
+        this.writeMetadata(metadata as RoomMetadata);
+        const manifest = this.readAssetManifest();
+        this.writeAssetManifest({ entries: manifest.entries.map((entry) => ({ ...entry, cleanupAt: Math.min(entry.cleanupAt ?? Number.POSITIVE_INFINITY, now + DRAWING_RETENTION_MS) })) });
+      });
+    }
+
+    if (metadata.expiredAt === undefined) await this.reconcileShirtFightDue(now, true);
+    await this.cleanupDueAssets(now);
+    metadata = this.readMetadata();
+    if (!metadata || metadata.expiredAt !== undefined) {
+      await this.scheduleAlarm();
       return;
     }
 
@@ -350,6 +491,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       socket.close(1008, "Room unavailable");
       return;
     }
+
+    await this.reconcileShirtFightDue(Date.now(), true);
 
     const tokenHash = await hashSessionToken(message.payload.sessionToken);
     const player = this.readPlayers().find((candidate) => candidate.sessionTokenHash === tokenHash);
@@ -504,7 +647,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       this.sendError(socket, "INVALID_PHASE", "System Crawl advances through player actions.", requestId);
       return;
     }
-    const result = bindGame(game).advance(secureRandom);
+    const result = bindGame(game).advance(Date.now(), secureRandom);
     const nextGame = result.state;
     const isFinished = nextGame.state.phase === "gameResults";
     this.persistGameMutation(
@@ -527,6 +670,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     requestId: string,
     command: GameCommand
   ): Promise<void> {
+    await this.reconcileShirtFightDue(Date.now(), true);
     const metadata = this.readMetadata();
     const game = this.readGame();
     if (!metadata || metadata.roomPhase !== "playing" || !game) {
@@ -536,7 +680,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     let nextGame: StoredGame;
     let scoreDelta: Readonly<Record<string, number>> = {};
     if (game.gameId !== "system-crawl") {
-      const result = bindGame(game).command(command, playerId, secureRandom);
+      const result = bindGame(game).command(command, playerId, Date.now(), secureRandom);
       nextGame = result.state;
       scoreDelta = result.scoreDelta ?? {};
     } else {
@@ -606,8 +750,20 @@ export class RoomDurableObject extends DurableObject<Env> {
   private async activeMetadata(): Promise<RoomMetadata | Response> {
     const metadata = this.readMetadata();
     if (!metadata) return jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
-    if (Date.now() - metadata.lastActivityAt >= ROOM_EXPIRY_MS) {
-      await this.ctx.storage.deleteAll();
+    if (metadata.expiredAt !== undefined || Date.now() - metadata.lastActivityAt >= ROOM_EXPIRY_MS) {
+      if (metadata.expiredAt === undefined) {
+        const now = Date.now();
+        const manifest = this.readAssetManifest();
+        if (manifest.entries.length === 0) {
+          await this.ctx.storage.deleteAll();
+          return jsonError("ROOM_EXPIRED", "Room no longer exists.", 410);
+        }
+        this.ctx.storage.transactionSync(() => {
+          this.writeMetadata({ ...metadata, expiredAt: now });
+          this.writeAssetManifest({ entries: manifest.entries.map((entry) => ({ ...entry, cleanupAt: Math.min(entry.cleanupAt ?? Number.POSITIVE_INFINITY, now + DRAWING_RETENTION_MS) })) });
+        });
+        await this.scheduleAlarm();
+      }
       return jsonError("ROOM_EXPIRED", "Room no longer exists.", 410);
     }
     return metadata;
@@ -647,6 +803,113 @@ export class RoomDurableObject extends DurableObject<Env> {
     return row ? (JSON.parse(row.json_value) as StoredGame) : null;
   }
 
+  private readAssetManifest(): ShirtFightAssetManifest {
+    const row = ([...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'shirt-fight-assets'")] as unknown as StateRow[])[0];
+    return row ? JSON.parse(row.json_value) as ShirtFightAssetManifest : { entries: [] };
+  }
+
+  private writeAssetManifest(manifest: ShirtFightAssetManifest): void {
+    this.sql.exec(
+      `INSERT INTO room_state (key, json_value, updated_at) VALUES ('shirt-fight-assets', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET json_value = excluded.json_value, updated_at = excluded.updated_at`,
+      JSON.stringify(manifest),
+      Date.now()
+    );
+  }
+
+  private ensureAssetReservation(
+    roomCode: string,
+    state: ShirtFightState,
+    playerId: string,
+    round: 1 | 2,
+    drawingNumber: 1 | 2
+  ): ShirtFightAssetEntry {
+    const manifest = this.readAssetManifest();
+    const existing = manifest.entries.find((item) => item.gameInstanceId === state.gameInstanceId && item.playerId === playerId && item.round === round && item.drawingNumber === drawingNumber);
+    if (existing) return existing;
+    const drawingId = deterministicUuid(state.seed, `drawing:${round}:${drawingNumber}:${playerId}`);
+    const entry: ShirtFightAssetEntry = {
+      drawingId,
+      objectKey: `${roomCode}/${state.gameInstanceId}/${crypto.randomUUID()}.webp`,
+      gameInstanceId: state.gameInstanceId,
+      playerId,
+      round,
+      drawingNumber,
+      status: "reserved",
+      createdAt: Date.now(),
+      retryCount: 0
+    };
+    this.writeAssetManifest({ entries: [...manifest.entries, entry] });
+    return entry;
+  }
+
+  private updateAssetEntry(drawingId: string, update: (entry: ShirtFightAssetEntry) => ShirtFightAssetEntry): void {
+    const manifest = this.readAssetManifest();
+    this.writeAssetManifest({ entries: manifest.entries.map((entry) => entry.drawingId === drawingId ? update(entry) : entry) });
+  }
+
+  private async reconcileShirtFightDue(now: number, shouldBroadcast: boolean): Promise<void> {
+    for (let guard = 0; guard < 32; guard += 1) {
+      const game = this.readGame();
+      const metadata = this.readMetadata();
+      if (!metadata || game?.gameId !== "shirt-fight" || game.state.deadlineAt === undefined || now < game.state.deadlineAt) return;
+      const fallbacks: ShirtFightFallbackDrawing[] = [];
+      for (const slot of missingShirtFightDrawings(game.state)) {
+        const entry = this.ensureAssetReservation(metadata.roomCode, game.state, slot.playerId, slot.round, slot.drawingNumber);
+        if (!await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey)) {
+          await this.env.SHIRT_FIGHT_DRAWINGS.put(entry.objectKey, decodeBase64(FALLBACK_WEBP), {
+            httpMetadata: { contentType: "image/webp", cacheControl: "private, no-store" },
+            customMetadata: { drawingId: entry.drawingId, gameInstanceId: entry.gameInstanceId, fallback: "true" }
+          });
+        }
+        const confirmed = await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey);
+        if (!confirmed) throw new Error("Fallback drawing could not be confirmed");
+        fallbacks.push({
+          id: entry.drawingId,
+          playerId: slot.playerId,
+          round: slot.round,
+          drawingNumber: slot.drawingNumber,
+          createdAt: game.state.deadlineAt,
+          width: 600,
+          height: 800,
+          byteLength: confirmed.size,
+          mediaType: "image/webp"
+        });
+      }
+      const result = advanceShirtFightDue(game.state, now, fallbacks);
+      if (result.state === game.state) return;
+      const completedNow = result.state.phase === "gameResults" && game.state.phase !== "gameResults";
+      this.ctx.storage.transactionSync(() => {
+        this.writeGame({ gameId: "shirt-fight", state: result.state });
+        for (const fallback of fallbacks) this.updateAssetEntry(fallback.id, (entry) => ({ ...entry, status: "finalized" }));
+        if (completedNow) this.markGameAssetsForCleanup(result.state.gameInstanceId, now + DRAWING_RETENTION_MS);
+      });
+      if (shouldBroadcast) this.broadcastGameState();
+    }
+  }
+
+  private markGameAssetsForCleanup(gameInstanceId: string, cleanupAt: number): void {
+    const manifest = this.readAssetManifest();
+    this.writeAssetManifest({ entries: manifest.entries.map((entry) => entry.gameInstanceId === gameInstanceId && entry.cleanupAt === undefined ? { ...entry, cleanupAt } : entry) });
+  }
+
+  private async cleanupDueAssets(now: number): Promise<void> {
+    let manifest = this.readAssetManifest();
+    for (const entry of manifest.entries.filter((item) => item.cleanupAt !== undefined && item.cleanupAt <= now)) {
+      try {
+        await this.env.SHIRT_FIGHT_DRAWINGS.delete(entry.objectKey);
+        manifest = { entries: manifest.entries.filter((item) => item.drawingId !== entry.drawingId) };
+      } catch {
+        const retryCount = entry.retryCount + 1;
+        const delay = Math.min(CLEANUP_RETRY_MAX_MS, CLEANUP_RETRY_BASE_MS * 2 ** Math.min(retryCount - 1, 6));
+        manifest = { entries: manifest.entries.map((item) => item.drawingId === entry.drawingId ? { ...item, retryCount, cleanupAt: now + delay } : item) };
+      }
+      this.writeAssetManifest(manifest);
+    }
+    const metadata = this.readMetadata();
+    if (metadata?.expiredAt !== undefined && manifest.entries.length === 0) await this.ctx.storage.deleteAll();
+  }
+
   private writeGame(game: StoredGame): void {
     this.sql.exec(
       `INSERT INTO room_state (key, json_value, updated_at) VALUES ('game', ?, ?)
@@ -670,6 +933,9 @@ export class RoomDurableObject extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.writeMetadata(metadata);
       this.writeGame(game);
+      if (game.gameId === "shirt-fight" && game.state.phase === "gameResults") {
+        this.markGameAssetsForCleanup(game.state.gameInstanceId, Date.now() + DRAWING_RETENTION_MS);
+      }
       for (const [scorePlayerId, points] of Object.entries(scoreDelta)) {
         this.sql.exec("UPDATE players SET score = score + ? WHERE id = ?", points, scorePlayerId);
       }
@@ -749,13 +1015,60 @@ export class RoomDurableObject extends DurableObject<Env> {
   private async scheduleAlarm(): Promise<void> {
     const metadata = this.readMetadata();
     if (!metadata) return;
-    let nextAlarm = metadata.lastActivityAt + ROOM_EXPIRY_MS;
+    let nextAlarm = metadata.expiredAt === undefined ? metadata.lastActivityAt + ROOM_EXPIRY_MS : Number.POSITIVE_INFINITY;
     const host = this.readPlayers().find((player) => player.isHost);
     if (host && !host.connected && host.disconnectedAt !== null) {
       nextAlarm = Math.min(nextAlarm, host.disconnectedAt + HOST_GRACE_MS);
     }
-    await this.ctx.storage.setAlarm(nextAlarm);
+    const game = this.readGame();
+    if (metadata.expiredAt === undefined && game?.gameId === "shirt-fight" && game.state.deadlineAt !== undefined) {
+      nextAlarm = Math.min(nextAlarm, game.state.deadlineAt);
+    }
+    for (const entry of this.readAssetManifest().entries) {
+      if (entry.cleanupAt !== undefined) nextAlarm = Math.min(nextAlarm, entry.cleanupAt);
+    }
+    if (Number.isFinite(nextAlarm)) await this.ctx.storage.setAlarm(nextAlarm);
   }
+}
+
+function decodeBase64(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+export function readWebpDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.slice(start, end));
+  if (ascii(0, 4) !== "RIFF" || ascii(8, 12) !== "WEBP") return null;
+  if (u32(bytes, 4) + 8 !== bytes.length) return null;
+  let dimensions: { width: number; height: number } | null = null;
+  let hasImagePayload = false;
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const kind = ascii(offset, offset + 4);
+    const size = u32(bytes, offset + 4);
+    const data = offset + 8;
+    const end = data + size;
+    if (end > bytes.length) return null;
+    if (kind === "VP8X" && size >= 10) dimensions = { width: 1 + u24(bytes, data + 4), height: 1 + u24(bytes, data + 7) };
+    if (kind === "VP8 " && size >= 10 && bytes[data + 3] === 0x9d && bytes[data + 4] === 0x01 && bytes[data + 5] === 0x2a) {
+      hasImagePayload = true;
+      dimensions ??= { width: ((bytes[data + 7] as number) << 8 | (bytes[data + 6] as number)) & 0x3fff, height: ((bytes[data + 9] as number) << 8 | (bytes[data + 8] as number)) & 0x3fff };
+    }
+    if (kind === "VP8L" && size >= 5 && bytes[data] === 0x2f) {
+      hasImagePayload = true;
+      const b1 = bytes[data + 1] as number, b2 = bytes[data + 2] as number, b3 = bytes[data + 3] as number, b4 = bytes[data + 4] as number;
+      dimensions ??= { width: 1 + b1 + ((b2 & 0x3f) << 8), height: 1 + (b2 >> 6) + (b3 << 2) + ((b4 & 0x0f) << 10) };
+    }
+    offset = end + (size % 2);
+    if (offset === bytes.length) return hasImagePayload ? dimensions : null;
+  }
+  return null;
+}
+
+function u24(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] as number) | ((bytes[offset + 1] as number) << 8) | ((bytes[offset + 2] as number) << 16);
+}
+
+function u32(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] as number) | ((bytes[offset + 1] as number) << 8) | ((bytes[offset + 2] as number) << 16) | ((bytes[offset + 3] as number) << 24);
 }
 
 function randomToken(): string {

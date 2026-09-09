@@ -127,3 +127,11 @@ The five selected categories are frozen in the stored JSON at creation so editin
 The public view contains the UTC puzzle number, bank version, explicit 25-cell target, five bounded diagram events, immutable initial order, compact attempt history, active player ID, and solved flag. Roll/Wipe paths contain two to five 0–24 cell indices; attempts contain only five event IDs, mismatch count, and solved state. The authored validation order is never stored in active game state or projected. The private view only says whether this viewer may submit.
 
 The Worker persists a correct attempt or fourth miss together with the room transition to results before broadcasting. Reviewing an attempt runs the same simulator in the browser without sending a command. See [AFTERPRINT rules](GAME_SPEC_AFTERPRINT.md).
+
+## Shirt Fight commands, assets, and projections
+
+Shirt Fight WebSocket commands are strict `shirtFight.submitSlogan`, `shirtFight.finishSlogans`, `shirtFight.submitShirt`, and `shirtFight.submitVote` variants. Every command carries the UUID game instance and integer phase nonce. Slogans are trimmed and limited to 80 UTF-16 code units; shirt IDs must come from the viewer's frozen assignment; votes must target the current two-shirt matchup. The engine independently verifies the frozen active player, authoritative deadline, phase, assignment, immutability, and one-vote rule.
+
+Drawing bytes do not enter WebSocket envelopes. A same-origin HTTP upload accepts only a valid room bearer session and a bounded 600×800 WebP during that player's current drawing slot. Controlled asset reads use the same non-URL credential transport and return only artwork the viewer owns, is currently assigned, or may see in the public matchup/reveal. R2 object keys and URLs never enter viewer state.
+
+Public state contains phase/deadline/progress plus only the current anonymous matchup or attributed reveal. Private state contains only the viewer's drawing completion, own slogans, current assignment/draft, shirt completion, or vote completion as applicable. The session seed, assignments for other players, vote identities, internal drawing keys, and attribution before reveal remain server-owned. See [Shirt Fight rules](GAME_SPEC_SHIRT_FIGHT.md).

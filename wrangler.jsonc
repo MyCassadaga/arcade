@@ -18,6 +18,12 @@
       }
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "SHIRT_FIGHT_DRAWINGS",
+      "bucket_name": "team-arcade-drawings"
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",

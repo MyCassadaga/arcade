@@ -388,3 +388,61 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .categories .category-results { margin-top: 1.5rem; }
 .categories .category-group { margin-bottom: 1.25rem; }
 .categories .clue-list span { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Shirt Fight */
+.shirt-fight { --shirt-ink: #21162b; --shirt-pink: #ff5b87; --shirt-gold: #ffd54a; --shirt-mint: #7de0bd; width: 100%; }
+.shirt-fight-screen { width: min(100%, 76rem); margin: 0 auto; }
+.shirt-fight-topline { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: .75rem; }
+.shirt-timer { min-width: 4rem; padding: .45rem .7rem; border-radius: 999px; background: var(--shirt-gold); color: var(--shirt-ink); text-align: center; font-size: 1.05rem; }
+.display-toggle { white-space: nowrap; }
+.shirt-fight .phase-card { background: linear-gradient(145deg, #fffaf2, #f9e8ff); }
+.shared-instruction { max-width: 36rem; margin: 2rem auto; color: #604f68; text-align: center; font-size: 1.1rem; }
+.drawing-tools { display: grid; gap: .65rem; margin: .8rem 0; }
+.color-tools, .brush-tools, .edit-tools { display: flex; flex-wrap: wrap; justify-content: center; gap: .45rem; }
+.drawing-tools button { min-height: 2.75rem; padding: .55rem .8rem; border: 2px solid #3b2c43; border-radius: 10px; background: #fff; color: #2a1d31; font-weight: 800; }
+.color-swatch { width: 2.9rem; padding: .35rem !important; }
+.color-swatch span { display: block; width: 1.45rem; height: 1.45rem; margin: auto; border: 1px solid #766; border-radius: 50%; background: var(--swatch); }
+.drawing-tools button.selected { outline: 3px solid var(--shirt-pink); outline-offset: 2px; }
+.drawing-canvas { display: block; width: min(100%, 30rem); height: auto; max-height: 62vh; margin: .5rem auto 1rem; border: 3px solid var(--shirt-ink); border-radius: 18px; background: white; box-shadow: 6px 6px 0 var(--shirt-mint); touch-action: none; user-select: none; }
+.slogan-form { max-width: 42rem; margin: 1.5rem auto; }
+.slogan-form label { display: block; margin-bottom: .45rem; font-weight: 900; }
+.slogan-form > div { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
+.slogan-form input { min-width: 0; min-height: 3.3rem; padding: .7rem .9rem; border: 2px solid var(--shirt-ink); border-radius: 10px; font: inherit; }
+.slogan-form small { display: block; margin-top: .3rem; color: #6b5e70; text-align: right; }
+.slogan-list { display: grid; gap: .45rem; max-width: 42rem; max-height: 16rem; margin: 1rem auto; padding: 0; overflow-y: auto; list-style: none; }
+.slogan-list li { padding: .7rem .9rem; border-left: 5px solid var(--shirt-pink); border-radius: 5px; background: #fff; font-weight: 750; }
+.shirt-builder { display: grid; gap: .65rem; justify-items: center; }
+.cycle-controls { display: grid; grid-template-columns: 3.2rem minmax(8rem, 1fr) 3.2rem; align-items: center; gap: .5rem; width: min(100%, 29rem); text-align: center; }
+.cycle-controls button { min-height: 3rem; border: 2px solid var(--shirt-ink); border-radius: 10px; background: #fff; color: var(--shirt-ink); font-size: 1.3rem; font-weight: 900; }
+.shirt-card { width: min(100%, 26rem); margin: 0 auto; }
+.shirt-silhouette { position: relative; display: grid; width: 100%; aspect-ratio: 5 / 4.7; place-items: start center; padding-top: 7%; background: var(--shirt-ink); clip-path: polygon(28% 0, 39% 7%, 61% 7%, 72% 0, 100% 18%, 88% 39%, 77% 32%, 80% 100%, 20% 100%, 23% 32%, 12% 39%, 0 18%); }
+.shirt-print { display: grid; width: 52%; height: 75%; grid-template-rows: minmax(0, 1fr) auto; gap: .35rem; padding: .5rem; border-radius: 6px; background: #fff; overflow: hidden; }
+.shirt-print img { width: 100%; height: 100%; min-height: 0; object-fit: cover; border-radius: 4px; }
+.shirt-print strong { display: -webkit-box; overflow: hidden; color: #201628; font-size: clamp(.72rem, 2.5vw, 1rem); line-height: 1.05; text-align: center; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.art-loading { display: grid; place-items: center; color: #746879; font-size: .75rem; }
+.shirt-matchup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; margin: 1rem 0; }
+.shirt-vote { padding: .8rem; border: 3px solid transparent; border-radius: 18px; background: transparent; color: var(--shirt-ink); }
+.shirt-vote:hover, .shirt-vote:focus-visible { border-color: var(--shirt-pink); background: #fff; }
+.shirt-vote > span { display: block; margin-top: .65rem; font-weight: 900; }
+.shirt-credits { display: grid; grid-template-columns: repeat(3, 1fr); gap: .65rem; max-width: 46rem; margin: 1rem auto; }
+.shirt-credits div { padding: .8rem; border-radius: 10px; background: #fff; text-align: center; }
+.shirt-credits dt { color: #6b5e70; font-size: .68rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.shirt-credits dd { margin: .25rem 0 0; font-weight: 900; }
+.shirt-credits .winner-credit { background: var(--shirt-gold); }
+.shirt-awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .7rem; margin: 1.25rem 0; }
+.shirt-awards article { padding: 1rem; border: 2px solid var(--shirt-ink); border-radius: 12px; background: #fff; box-shadow: 3px 3px 0 var(--shirt-mint); }
+.shirt-awards span, .shirt-awards strong { display: block; }
+.shirt-awards span { color: #7c3150; font-size: .72rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.shirt-awards strong { margin-top: .3rem; }
+.shirt-awards p { margin-bottom: 0; color: #65586a; font-size: .82rem; }
+
+@media (max-width: 600px) {
+  .shirt-fight-topline { grid-template-columns: 1fr auto; }
+  .shirt-fight-topline .display-toggle { grid-column: 1 / -1; }
+  .drawing-tools { position: sticky; top: 0; z-index: 2; padding: .45rem; border-radius: 12px; background: rgba(255,250,242,.96); }
+  .drawing-canvas { max-height: none; box-shadow: 4px 4px 0 var(--shirt-mint); }
+  .shirt-matchup { gap: .35rem; }
+  .shirt-vote { padding: .2rem; }
+  .shirt-credits { grid-template-columns: 1fr; }
+  .shirt-print { width: 58%; }
+}

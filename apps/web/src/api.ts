@@ -43,6 +43,36 @@ export async function validateRoomSession(roomCode: string, sessionToken: string
   }
 }
 
+export async function uploadShirtFightDrawing(roomCode: string, sessionToken: string, image: Blob): Promise<{ drawingId: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/shirt-fight/drawings`, {
+      method: "POST",
+      headers: { "content-type": "image/webp", authorization: `Bearer ${sessionToken}` },
+      body: image
+    });
+  } catch {
+    throw new ApiError("The drawing could not reach the arcade. Try again.", "NETWORK_ERROR");
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as ApiErrorBody;
+    throw new ApiError(body.error?.message ?? "The drawing could not be saved.", body.error?.code);
+  }
+  return response.json() as Promise<{ drawingId: string }>;
+}
+
+export async function fetchShirtFightDrawing(roomCode: string, sessionToken: string, drawingId: string): Promise<Blob> {
+  const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/shirt-fight/assets/${encodeURIComponent(drawingId)}`, {
+    headers: { authorization: `Bearer ${sessionToken}` },
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as ApiErrorBody;
+    throw new ApiError(body.error?.message ?? "That drawing is unavailable.", body.error?.code);
+  }
+  return response.blob();
+}
+
 async function requestSession(path: string, displayName: string): Promise<RoomSessionResponse> {
   let response: Response;
   try {

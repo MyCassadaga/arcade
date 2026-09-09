@@ -62,14 +62,15 @@
 
 - Per-room Cloudflare Durable Object SQLite is authoritative for room metadata, players, current game, scores, and processed request IDs.
 - Browser `localStorage` retains the anonymous room session token plus local tutorial/audio preferences.
-- React static assets are deployed with the Worker. No D1, KV, R2, external database, or process-global authoritative state is configured.
-- Rooms and their server-side state expire after 12 hours of inactivity.
+- A private Cloudflare R2 binding named `SHIRT_FIGHT_DRAWINGS` stores temporary bounded Shirt Fight WebP assets. The room Durable Object retains only drawing metadata and a server-only cleanup manifest; normal access is denied at logical room expiry and objects target cleanup roughly 24 hours after game completion or room expiry.
+- React static assets are deployed with the Worker. No D1, KV, external database, or process-global authoritative state is configured.
+- Rooms become logically inaccessible after 12 hours of inactivity. When temporary drawing objects exist, the private cleanup tombstone remains until scheduled R2 deletion completes; otherwise Durable Object state is removed at expiry.
 
 ## External providers / systems
 
 - Cloudflare Workers, Durable Objects, SQLite-backed Durable Object storage, static assets, observability, and Wrangler deployment.
 - GitHub hosts the repository and runs CI/optional production deployment through GitHub Actions and the `production` environment.
-- Browser clients communicate only with the same-origin Worker over HTTPS and WebSockets; no third-party runtime API is present in tracked source.
+- Browser clients communicate only with the same-origin Worker over HTTPS and WebSockets; drawing asset requests are mediated by authenticated same-origin application routes rather than public R2 URLs. No third-party runtime API is present in tracked source.
 
 ## Repository-specific HIGH-risk domains
 
@@ -89,7 +90,7 @@
 ## Release mechanics and platform constraints
 
 - **Historically reachable production-state compatibility:** Preserve compatibility with active room SQLite/persisted game JSON and hibernating WebSocket attachments for the documented 12-hour room lifetime; `wrangler.jsonc` currently declares Durable Object SQLite migration tag `v1`.
-- **Provider/runtime limits and result semantics that release tooling must verify:** Room capacity is 12; WebSocket messages are bounded to 4,096 bytes; static assets and the `ROOMS` binding ship with the Worker; deployment success/URL/version must be taken from the exact Wrangler result. Cloudflare account-specific limits are `UNKNOWN — VERIFY`.
+- **Provider/runtime limits and result semantics that release tooling must verify:** Room capacity is 12; Shirt Fight freezes 3–8 active players; WebSocket messages are bounded to 4,096 bytes; drawing HTTP uploads are bounded to 160,000 bytes and 600×800 WebP; static assets, `ROOMS`, and private `SHIRT_FIGHT_DRAWINGS` bindings ship with the Worker; deployment success/URL/version must be taken from the exact Wrangler result. The production R2 bucket's existence, lifecycle/account configuration, and Cloudflare account-specific limits are `UNKNOWN — VERIFY` and block release of Shirt Fight until resolved.
 - **Authenticated operator path and any repository-defined access gate:** Local deployment uses an external `npx wrangler login`; CI uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub `production` environment and the `CLOUDFLARE_DEPLOY_ENABLED` repository variable. Actual environment reviewers are `UNKNOWN — VERIFY`.
 - **Merge method and exact reviewed-SHA preservation:** A GitHub merge commit guarded by the reviewed head SHA preserves that reviewed commit as a parent, while producing a distinct merge SHA; tracked files do not define allowed merge strategies or branch-protection rules.
 - **Merge/deployment coupling and automatic-deploy trigger:** `COUPLED` — a merge/push to `main` was observed to create a Cloudflare Wrangler deployment even while the tracked GitHub Actions `deploy` job was skipped. Release authorization must cover the merge and automatic production deployment together, followed by bounded verification.

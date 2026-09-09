@@ -40,6 +40,16 @@ export const GAME_CATALOG = [
     availability: "public"
   },
   {
+    id: "shirt-fight",
+    name: "Shirt Fight",
+    description: "Draw, write, remix, and vote for the room's funniest shirt.",
+    duration: "12–18 min",
+    playerRange: "3–8 players",
+    icon: "shirt",
+    playMode: "room",
+    availability: "public"
+  },
+  {
     id: "system-crawl",
     name: "System Crawl",
     description: "A cooperative IT dungeon crawl through scope creep, meetings, and production incidents.",

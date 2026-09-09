@@ -294,7 +294,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
       )}
 
       <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""}`}>
-        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} status={status} commandPending={commandPending} send={send} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
+        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} roomCode={session.roomCode} sessionToken={session.sessionToken} status={status} commandPending={commandPending} send={send} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
             {!self?.isHost && <span className="host-note">{host?.connected === false ? "Host disconnected — holding their seat" : `${host?.displayName ?? "The host"} is choosing`}</span>}
@@ -311,7 +311,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
                   disabled={!self?.isHost || status !== "connected" || commandPending}
                   onClick={() => selectGame(game.id)}
                 >
-                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : game.icon === "afterprint" ? "▦" : "⌁"}</span>
+                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : game.icon === "afterprint" ? "▦" : game.icon === "shirt" ? "T" : "⌁"}</span>
                   <span className="game-title">{game.name}</span>
                   <span className="game-description">{game.description}</span>
                   <span className="game-meta"><span>{game.duration}</span><span>{game.playerRange}</span></span>
