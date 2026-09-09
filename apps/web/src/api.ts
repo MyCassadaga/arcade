@@ -13,6 +13,11 @@ export class ApiError extends Error {
   }
 }
 
+export function isTerminalRoomSessionError(error: unknown): error is ApiError {
+  return error instanceof ApiError
+    && ["ROOM_NOT_FOUND", "ROOM_EXPIRED", "INVALID_SESSION"].includes(error.code);
+}
+
 export async function createRoom(displayName: string): Promise<RoomSessionResponse> {
   return requestSession("/api/rooms", displayName);
 }

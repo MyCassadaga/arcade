@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, RoomView, ServerMessage, TypedGameViewerState } from "@team-arcade/shared";
+import { ApiError, isTerminalRoomSessionError, validateRoomSession } from "./api";
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "error";
 
@@ -13,7 +14,11 @@ interface RoomSocketState {
   send: (message: ClientMessage) => boolean;
 }
 
-export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocketState {
+export function useRoomSocket(
+  roomCode: string,
+  sessionToken: string,
+  revalidateOpaqueFailures = false
+): RoomSocketState {
   const [room, setRoom] = useState<RoomView | null>(null);
   const [game, setGame] = useState<TypedGameViewerState | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
@@ -86,7 +91,7 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
         }
       });
 
-      socket.addEventListener("close", (event: CloseEvent) => {
+      const handleClose = async (event: CloseEvent) => {
         if (disposed || fatal) return;
         pendingRequestIdsRef.current.clear();
         setCommandPending(false);
@@ -98,11 +103,31 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
           setStatus("error");
           return;
         }
-        attempt += 1;
         setStatus(navigator.onLine ? "reconnecting" : "offline");
+        if (revalidateOpaqueFailures && event.code === 1006 && navigator.onLine) {
+          try {
+            await validateRoomSession(roomCode, sessionToken);
+          } catch (caught) {
+            if (disposed || fatal) return;
+            if (isTerminalRoomSessionError(caught)) {
+              fatal = true;
+              setMessage(caught.message);
+              setFatalSession(true);
+              setStatus("error");
+              return;
+            }
+            if (caught instanceof ApiError) setMessage(caught.message);
+          }
+        }
+        if (disposed || fatal) return;
+        attempt += 1;
         const baseDelay = Math.min(10_000, 500 * 2 ** Math.min(attempt, 5));
         const delay = baseDelay * (0.75 + Math.random() * 0.5);
         reconnectTimer = window.setTimeout(connect, delay);
+      };
+
+      socket.addEventListener("close", (event: CloseEvent) => {
+        void handleClose(event);
       });
 
       heartbeatTimer = window.setInterval(() => {
@@ -139,7 +164,7 @@ export function useRoomSocket(roomCode: string, sessionToken: string): RoomSocke
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [finishRequest, roomCode, sessionToken]);
+  }, [finishRequest, revalidateOpaqueFailures, roomCode, sessionToken]);
 
   const send = useCallback((clientMessage: ClientMessage): boolean => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {

@@ -134,6 +134,7 @@ Client reconnection algorithm:
 - cap retry delay at a reasonable value such as 10 seconds;
 - immediately show `Reconnecting…` state;
 - reconnect with room code and locally stored session token;
+- for a stored direct-solo session, revalidate the token after an opaque WebSocket upgrade failure so a room that expired between the resume preflight and socket connection is cleared instead of retried forever;
 - server rebinds socket to player identity;
 - server sends complete current player-specific snapshot;
 - client replaces local game state with server snapshot.

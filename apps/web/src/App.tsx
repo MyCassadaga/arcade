@@ -8,7 +8,7 @@ import {
   type GameId,
   type RoomSessionResponse
 } from "@team-arcade/shared";
-import { ApiError, createRoom, joinRoom, validateRoomSession } from "./api";
+import { ApiError, createRoom, isTerminalRoomSessionError, joinRoom, validateRoomSession } from "./api";
 import { useRoomSocket } from "./useRoomSocket";
 import { GameScreen } from "./GameScreen";
 import { nextSoloLaunchCommand, soloRoomPointerStorageKey, type SoloLaunchRequestIds } from "./solo-launch";
@@ -204,7 +204,11 @@ export function Lobby({ session, soloGameId, onLeave }: {
   soloGameId: SoloGameId | null;
   onLeave: () => void;
 }) {
-  const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(session.roomCode, session.sessionToken);
+  const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(
+    session.roomCode,
+    session.sessionToken,
+    soloGameId !== null
+  );
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const soloRequestIds = useRef<SoloLaunchRequestIds | null>(null);
   if (!soloRequestIds.current) {
@@ -370,7 +374,7 @@ function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
       await validateRoomSession(session.roomCode, session.sessionToken);
       onValid();
     } catch (caught) {
-      if (caught instanceof ApiError && ["ROOM_NOT_FOUND", "ROOM_EXPIRED", "INVALID_SESSION"].includes(caught.code)) {
+      if (isTerminalRoomSessionError(caught)) {
         onInvalid();
         return;
       }

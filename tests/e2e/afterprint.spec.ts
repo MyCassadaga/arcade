@@ -14,7 +14,7 @@ test("AFTERPRINT: an expired direct session clears itself and returns home", asy
     localStorage.setItem("team-arcade:session:ABCDE", JSON.stringify({
       roomCode: "ABCDE",
       playerId: "expired-player",
-      sessionToken: "expired-token"
+      sessionToken: "expired-token-with-valid-length-0001"
     }));
   });
   await page.goto("/?play=afterprint");
