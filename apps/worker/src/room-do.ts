@@ -5,6 +5,7 @@ import {
   advanceShirtFightDue,
   canViewerAccessShirtFightDrawing,
   deterministicUuid,
+  isShirtFightDrawingUploadCurrent,
   missingShirtFightDrawings,
   registerShirtFightDrawing,
   type ShirtFightDrawing,
@@ -281,7 +282,12 @@ export class RoomDurableObject extends DurableObject<Env> {
       return jsonError("INVALID_COMMAND", "Drawings must be a 600 by 800 WebP image.", 400);
     }
 
-    const slot = { playerId: player.id, round: game.state.generationRound, drawingNumber: game.state.drawingNumber };
+    const slot = {
+      gameInstanceId: game.state.gameInstanceId,
+      playerId: player.id,
+      round: game.state.generationRound,
+      drawingNumber: game.state.drawingNumber
+    };
     const entry = this.ensureAssetReservation(metadata.roomCode, game.state, slot.playerId, slot.round, slot.drawingNumber);
     await this.env.SHIRT_FIGHT_DRAWINGS.put(entry.objectKey, bytes, {
       httpMetadata: { contentType: "image/webp", cacheControl: "private, no-store" },
@@ -292,10 +298,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     const now = Date.now();
     await this.reconcileShirtFightDue(now, true);
     const current = this.readGame();
-    if (current?.gameId !== "shirt-fight" || current.state.gameInstanceId !== game.state.gameInstanceId
-      || current.state.phase !== "drawing" || current.state.generationRound !== slot.round
-      || current.state.drawingNumber !== slot.drawingNumber || current.state.deadlineAt === undefined
-      || now >= current.state.deadlineAt || missingShirtFightDrawings(current.state).every((item) => item.playerId !== player.id)) {
+    if (current?.gameId !== "shirt-fight" || !isShirtFightDrawingUploadCurrent(current.state, slot, now)) {
       this.updateAssetEntry(entry.drawingId, (item) => item.status === "reserved" ? { ...item, cleanupAt: now + DRAWING_RETENTION_MS } : item);
       await this.scheduleAlarm();
       return jsonError("STALE_PHASE", "That drawing phase is closed.", 409);

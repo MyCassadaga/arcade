@@ -9,6 +9,7 @@ import {
   getShirtFightPrivateView,
   getShirtFightPublicView,
   handleShirtFightCommand,
+  isShirtFightDrawingUploadCurrent,
   missingShirtFightDrawings,
   registerShirtFightDrawing,
   type ShirtFightFallbackDrawing,
@@ -72,13 +73,23 @@ describe("Shirt Fight", () => {
   it("uses two authoritative drawing phases, preserves metadata only, and rejects late/duplicate uploads", () => {
     let state = create();
     const first = fallbacks(state)[0] as ShirtFightFallbackDrawing;
+    const uploadSlot = {
+      gameInstanceId: state.gameInstanceId,
+      playerId: first.playerId,
+      round: first.round,
+      drawingNumber: first.drawingNumber
+    };
+    expect(isShirtFightDrawingUploadCurrent(state, uploadSlot, (state.deadlineAt ?? 0) - 1)).toBe(true);
+    expect(isShirtFightDrawingUploadCurrent(state, uploadSlot, state.deadlineAt ?? 0)).toBe(false);
     state = registerShirtFightDrawing(state, { ...first, artistPlayerId: first.playerId, round: 1, drawingNumber: 1, durationMs: 0, fallback: false }, 2_000).state;
+    expect(isShirtFightDrawingUploadCurrent(state, uploadSlot, 2_001)).toBe(false);
     expect(getShirtFightPrivateView(state, { playerId: first.playerId, isHost: true }).drawingSubmitted).toBe(true);
     expect(getShirtFightPublicView(state)).not.toHaveProperty("drawings");
     expect(JSON.stringify(state)).not.toContain("data:image");
     expect(() => registerShirtFightDrawing(state, { ...first, artistPlayerId: first.playerId, round: 1, drawingNumber: 1, durationMs: 0, fallback: false }, 2_001)).toThrow(/already finalized/);
     state = expire(state);
     expect(state).toMatchObject({ phase: "drawing", drawingNumber: 2 });
+    expect(isShirtFightDrawingUploadCurrent(state, uploadSlot, state.phaseStartedAt)).toBe(false);
     expect(state.drawings).toHaveLength(3);
     state = expire(state);
     expect(state.phase).toBe("slogans");

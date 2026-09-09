@@ -660,7 +660,7 @@ describe("AFTERPRINT through the party-game registry", () => {
     for (const socket of sockets) socket.close(1000, "test complete");
   });
 
-  it("rejects a drawing that finishes after its deadline and durably retries transient fallback storage failure", async () => {
+  it("durably retries transient fallback storage failure", async () => {
     const host = await create("Deadline Host");
     const sessions = [host, await join(host.roomCode, "Deadline Two"), await join(host.roomCode, "Deadline Three")];
     const sockets = await Promise.all(sessions.map(connectReady));
@@ -670,21 +670,7 @@ describe("AFTERPRINT through the party-game registry", () => {
     (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.startGame", requestId: "deadline-start", payload: {} }));
     await started;
     const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
-    await setShirtFightDeadline(stub, Date.now() + 5);
     const bucket = testEnv.SHIRT_FIGHT_DRAWINGS;
-    const originalPut = bucket.put.bind(bucket);
-    const delayedPut = vi.spyOn(bucket, "put").mockImplementationOnce(async (key, value, options) => {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      return originalPut(key, value, options);
-    });
-    const late = await drawingUpload(host.roomCode, host.sessionToken, validWebp());
-    expect(late.status).toBe(409);
-    delayedPut.mockRestore();
-    const afterLate = await readStoredShirtFight(stub);
-    expect(afterLate.state).toMatchObject({ phase: "drawing", drawingNumber: 2 });
-    expect(afterLate.state.drawings).toHaveLength(3);
-    expect(afterLate.state.drawings.find((drawing) => drawing.artistPlayerId === host.playerId)?.fallback).toBe(true);
-
     await setShirtFightDeadline(stub, Date.now() - 1);
     const failedPut = vi.spyOn(bucket, "put").mockRejectedValueOnce(new Error("transient R2 failure"));
     expect(await runDurableObjectAlarm(stub)).toBe(true);
@@ -701,9 +687,14 @@ describe("AFTERPRINT through the party-game registry", () => {
       state.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'shirt-fight-assets'", JSON.stringify(manifest));
     });
     expect(await runDurableObjectAlarm(stub)).toBe(true);
-    const recovered = await readStoredShirtFight(stub);
-    expect(recovered.state.phase).toBe("slogans");
-    expect(recovered.state.drawings).toHaveLength(6);
+    const recoveredFirstPhase = await readStoredShirtFight(stub);
+    expect(recoveredFirstPhase.state).toMatchObject({ phase: "drawing", drawingNumber: 2 });
+    expect(recoveredFirstPhase.state.drawings).toHaveLength(3);
+    await setShirtFightDeadline(stub, Date.now() - 1);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const recoveredSecondPhase = await readStoredShirtFight(stub);
+    expect(recoveredSecondPhase.state.phase).toBe("slogans");
+    expect(recoveredSecondPhase.state.drawings).toHaveLength(6);
     for (const socket of sockets) socket.close(1000, "test complete");
   });
 });

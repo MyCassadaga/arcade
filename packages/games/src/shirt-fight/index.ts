@@ -101,6 +101,13 @@ export interface ShirtFightFallbackDrawing extends Omit<ShirtFightDrawing, "arti
   playerId: string;
 }
 
+export interface ShirtFightDrawingUploadSlot {
+  gameInstanceId: string;
+  playerId: string;
+  round: 1 | 2;
+  drawingNumber: 1 | 2;
+}
+
 export function createShirtFightState(context: GameContext, gameInstanceId: string): ShirtFightState {
   const playerIds = context.players.filter((player) => player.connected).map((player) => player.id);
   if (playerIds.length < 3) throw new GameRuleError("TOO_FEW_PLAYERS", "Shirt Fight needs at least 3 connected players.");
@@ -136,6 +143,21 @@ export function missingShirtFightDrawings(state: ShirtFightState): Array<{ playe
   return state.playerIds.filter((playerId) => !state.drawings.some((drawing) =>
     drawing.artistPlayerId === playerId && drawing.round === state.generationRound && drawing.drawingNumber === state.drawingNumber
   )).map((playerId) => ({ playerId, round: state.generationRound as 1 | 2, drawingNumber: state.drawingNumber as 1 | 2 }));
+}
+
+export function isShirtFightDrawingUploadCurrent(
+  state: ShirtFightState,
+  slot: ShirtFightDrawingUploadSlot,
+  now: number
+): boolean {
+  return state.gameInstanceId === slot.gameInstanceId
+    && state.phase === "drawing"
+    && state.generationRound === slot.round
+    && state.drawingNumber === slot.drawingNumber
+    && state.deadlineAt !== undefined
+    && now < state.deadlineAt
+    && state.playerIds.includes(slot.playerId)
+    && missingShirtFightDrawings(state).some((item) => item.playerId === slot.playerId);
 }
 
 export function registerShirtFightDrawing(state: ShirtFightState, drawing: ShirtFightDrawing, now: number): GameResult<ShirtFightState> {
