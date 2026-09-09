@@ -75,10 +75,10 @@ describe("solo room-session revalidation", () => {
       MockWebSocket.instances[0]?.dispatchEvent(new CloseEvent("close", { code: 1006 }));
     });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(result.current.message).toMatch(/could not reach the arcade/i));
+    expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.current.fatalSession).toBe(false);
     expect(result.current.status).toBe("reconnecting");
-    expect(result.current.message).toMatch(/could not reach the arcade/i);
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 });
