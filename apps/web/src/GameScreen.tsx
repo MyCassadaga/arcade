@@ -19,9 +19,10 @@ interface GameScreenProps {
   status: ConnectionStatus;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
+  onBackToArcade?: (() => void) | undefined;
 }
 
-export function GameScreen({ game, room, selfId, status, commandPending, send }: GameScreenProps) {
+export function GameScreen({ game, room, selfId, status, commandPending, send, onBackToArcade }: GameScreenProps) {
   const self = room.players.find((player) => player.id === selfId);
   const sendGame = (command: GameCommand) => send({
     type: "game.command",
@@ -53,9 +54,12 @@ export function GameScreen({ game, room, selfId, status, commandPending, send }:
   }
 
   if (game.gameId === "afterprint") {
+    const afterprintBackToArcade = onBackToArcade
+      ? () => { onBackToArcade(); return true; }
+      : backToArcade;
     return (
       <section className="game-stage afterprint">
-        <AfterprintScreen game={game} commandPending={commandPending} sendGame={sendGame} playAgain={playAgain} backToArcade={backToArcade} />
+        <AfterprintScreen game={game} commandPending={commandPending} sendGame={sendGame} playAgain={playAgain} backToArcade={afterprintBackToArcade} />
       </section>
     );
   }

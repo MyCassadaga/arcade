@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
-import { GAME_CATALOG, PUBLIC_GAME_CATALOG } from "./catalog";
+import { GAME_CATALOG, PUBLIC_GAME_CATALOG, SINGLE_PLAYER_GAME_CATALOG } from "./catalog";
 
 describe("shared protocol validation", () => {
   it("normalizes valid room codes and rejects ambiguous characters", () => {
@@ -45,6 +45,8 @@ describe("shared protocol validation", () => {
   it("publishes only public games in the arcade catalog", () => {
     expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["who-said-that", "impostor", "categories", "afterprint"]);
     expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
+    expect(SINGLE_PLAYER_GAME_CATALOG.map((game) => game.id)).toEqual(["afterprint"]);
+    expect(SINGLE_PLAYER_GAME_CATALOG.every((game) => game.playMode === "single-player")).toBe(true);
   });
 
   it("strictly validates AFTERPRINT identity and five-event permutations", () => {
