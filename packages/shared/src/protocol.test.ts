@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema } from "./protocol";
+import { afterprintCommandSchema, clientMessageSchema, displayNameSchema, roomCodeSchema, roomSessionRequestSchema } from "./protocol";
 import { GAME_CATALOG, PUBLIC_GAME_CATALOG, SINGLE_PLAYER_GAME_CATALOG } from "./catalog";
 
 describe("shared protocol validation", () => {
@@ -11,6 +11,13 @@ describe("shared protocol validation", () => {
   it("trims names and enforces the documented length", () => {
     expect(displayNameSchema.parse("  Ada  ")).toBe("Ada");
     expect(displayNameSchema.safeParse("x".repeat(25)).success).toBe(false);
+  });
+
+  it("bounds stored-session validation tokens", () => {
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(32) }).success).toBe(true);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "short" }).success).toBe(false);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(201) }).success).toBe(false);
+    expect(roomSessionRequestSchema.safeParse({ sessionToken: "x".repeat(32), extra: true }).success).toBe(false);
   });
 
   it("rejects unknown and malformed WebSocket commands", () => {

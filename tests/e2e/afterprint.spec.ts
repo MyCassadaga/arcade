@@ -8,6 +8,25 @@ import {
 } from "@team-arcade/games/afterprint/puzzles";
 import type { AfterprintEventId } from "@team-arcade/shared";
 
+test("AFTERPRINT: an expired direct session clears itself and returns home", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("team-arcade:solo-room:afterprint", "ABCDE");
+    localStorage.setItem("team-arcade:session:ABCDE", JSON.stringify({
+      roomCode: "ABCDE",
+      playerId: "expired-player",
+      sessionToken: "expired-token"
+    }));
+  });
+  await page.goto("/?play=afterprint");
+
+  await expect(page.getByRole("heading", { name: /team\s*arcade/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/u);
+  expect(await page.evaluate(() => ({
+    pointer: localStorage.getItem("team-arcade:solo-room:afterprint"),
+    session: localStorage.getItem("team-arcade:session:ABCDE")
+  }))).toEqual({ pointer: null, session: null });
+});
+
 test("AFTERPRINT: mobile reconstruction, replay, history, patterns, sharing and desktop controls", async ({ browser }, testInfo) => {
   const context = await browser.newContext();
   const page = await context.newPage();

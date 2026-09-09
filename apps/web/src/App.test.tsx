@@ -92,7 +92,7 @@ describe("App entry screen", () => {
     expect(screen.queryByRole("heading", { name: "Players" })).not.toBeInTheDocument();
   });
 
-  it("keeps reconnecting solo presentation free of room and lobby language", () => {
+  it("keeps reconnecting solo presentation free of room and lobby language", async () => {
     storeSoloSession();
     roomSocket.current = {
       ...roomSocket.current,
@@ -102,8 +102,8 @@ describe("App entry screen", () => {
 
     render(<App />);
 
+    expect(await screen.findByText("Connection interrupted. Restoring your puzzle.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Opening AFTERPRINT" })).toBeInTheDocument();
-    expect(screen.getByText("Connection interrupted. Restoring your puzzle.")).toBeInTheDocument();
     expect(screen.queryByText(/room code/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/share this link/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Choose a game" })).not.toBeInTheDocument();
@@ -121,6 +121,20 @@ describe("App entry screen", () => {
     expect(window.location.search).toBe("");
     expect(localStorage.getItem(soloRoomPointerStorageKey("afterprint"))).toBeNull();
     expect(localStorage.getItem(sessionStorageKey("ABCDE"))).toBeNull();
+  });
+
+  it("preserves a stored solo session when validation has a recoverable network failure", async () => {
+    storeSoloSession();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.getByText(/could not reach the arcade/i)).toBeInTheDocument();
+    expect(localStorage.getItem(soloRoomPointerStorageKey("afterprint"))).toBe("ABCDE");
+    expect(localStorage.getItem(sessionStorageKey("ABCDE"))).toContain("solo-token");
+    expect(screen.queryByText(/room code/i)).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?play=afterprint");
   });
 
   it("owns stable select and start ids across reconnect-style pending resets", async () => {
@@ -175,4 +189,5 @@ function storeSoloSession() {
   localStorage.setItem(soloRoomPointerStorageKey("afterprint"), session.roomCode);
   localStorage.setItem(sessionStorageKey(session.roomCode), JSON.stringify(session));
   window.history.replaceState(null, "", "/?play=afterprint");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
 }

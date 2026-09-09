@@ -28,7 +28,7 @@ Owns:
 - WebSocket connection/reconnection behavior;
 - optimistic affordances only when they cannot affect authoritative outcome.
 
-The main page launches catalogued single-player games without room ceremony. For AFTERPRINT, the client creates the existing one-player room internally, stores the session token under the established room-keyed local-storage key, and stores only a game-to-room-code pointer for refresh recovery. It then derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered. Invalid or expired solo sessions clear both local entries and return to the main page.
+The main page launches catalogued single-player games without room ceremony. For AFTERPRINT, the client creates the existing one-player room internally, stores the session token under the established room-keyed local-storage key, and stores only a game-to-room-code pointer for refresh recovery. Before reopening a stored solo session, it posts the token to the bounded session-validation route; a typed missing/expired/invalid response clears both local entries, while a network failure preserves them and offers a retry. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
 
 Does not own:
 - scoring;

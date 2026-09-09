@@ -91,6 +91,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .solo-launch h1 { margin: .35rem 0 .8rem; font: 900 clamp(2rem, 6vw, 3.5rem)/1 "Arial Black", Impact, sans-serif; }
 .solo-launch > p:not(.eyebrow) { color: #655f55; line-height: 1.5; }
 .solo-launch-icon { display: grid; width: 4rem; height: 4rem; margin: 0 auto 1rem; place-items: center; border-radius: 14px; background: var(--ink); color: #f6c96f; font-size: 1.8rem; font-weight: 900; transform: rotate(-3deg); }
+.solo-retry { max-width: 18rem; margin: 1rem auto; }
 .lobby-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 23rem); gap: clamp(1.5rem, 4vw, 4rem); }
 .section-heading, .players-heading { display: flex; justify-content: space-between; align-items: end; min-height: 4rem; margin-bottom: 1.2rem; }
 .section-heading h2, .players-heading h2 { margin: 0; font: 800 clamp(1.8rem, 3vw, 2.5rem) "Arial Black", Impact, sans-serif; }

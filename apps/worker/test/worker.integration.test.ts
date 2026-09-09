@@ -29,6 +29,32 @@ describe("room Worker and Durable Object", () => {
     expect(joined.playerId).not.toBe(created.playerId);
   });
 
+  it("validates stored sessions without exposing or mutating room state", async () => {
+    const missing = await call("/api/rooms/ABCDE/session", { sessionToken: "x".repeat(43) });
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "ROOM_NOT_FOUND" } });
+
+    const created = await create("Stored Solo");
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(created.roomCode));
+    const readStoredMetadata = () => runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'metadata'")] as unknown as Array<{ json_value: string }>;
+      return rows[0]?.json_value;
+    });
+    const metadataBefore = await readStoredMetadata();
+    const valid = await call(`/api/rooms/${created.roomCode}/session`, { sessionToken: created.sessionToken });
+    expect(valid.status).toBe(200);
+    await expect(valid.json()).resolves.toEqual({ valid: true });
+
+    const invalid = await call(`/api/rooms/${created.roomCode}/session`, { sessionToken: "x".repeat(43) });
+    expect(invalid.status).toBe(401);
+    await expect(invalid.json()).resolves.toMatchObject({ error: { code: "INVALID_SESSION" } });
+
+    const malformed = await call(`/api/rooms/${created.roomCode}/session`, { sessionToken: "short" });
+    expect(malformed.status).toBe(401);
+    await expect(malformed.json()).resolves.toMatchObject({ error: { code: "INVALID_SESSION" } });
+    expect(await readStoredMetadata()).toBe(metadataBefore);
+  });
+
   it("enforces room capacity, expires inactive rooms, and bounds HTTP payloads", async () => {
     const created = await create("Player 1");
     for (let index = 2; index <= 12; index += 1) await join(created.roomCode, `Player ${index}`);

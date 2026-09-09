@@ -8,7 +8,7 @@ import {
   type GameId,
   type RoomSessionResponse
 } from "@team-arcade/shared";
-import { ApiError, createRoom, joinRoom } from "./api";
+import { ApiError, createRoom, joinRoom, validateRoomSession } from "./api";
 import { useRoomSocket } from "./useRoomSocket";
 import { GameScreen } from "./GameScreen";
 import { nextSoloLaunchCommand, soloRoomPointerStorageKey, type SoloLaunchRequestIds } from "./solo-launch";
@@ -24,9 +24,28 @@ interface InitialRoute {
 
 export function App() {
   const initialRoute = useMemo(readInitialRoute, []);
-  const [session, setSession] = useState<RoomSessionResponse | null>(initialRoute.session);
+  const [session, setSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? null : initialRoute.session);
+  const [soloResumeSession, setSoloResumeSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? initialRoute.session : null);
   const [inviteCode, setInviteCode] = useState(initialRoute.inviteCode);
   const [soloGameId, setSoloGameId] = useState<SoloGameId | null>(initialRoute.soloGameId);
+
+  if (soloResumeSession && soloGameId) {
+    return <SoloResumeGate
+      session={soloResumeSession}
+      gameId={soloGameId}
+      onValid={() => { setSession(soloResumeSession); setSoloResumeSession(null); }}
+      onInvalid={() => {
+        clearSoloSession(soloResumeSession, soloGameId);
+        setSoloResumeSession(null);
+        setSoloGameId(null);
+      }}
+      onCancel={() => {
+        clearSoloSession(soloResumeSession, soloGameId);
+        setSoloResumeSession(null);
+        setSoloGameId(null);
+      }}
+    />;
+  }
 
   if (session) {
     return <Lobby session={session} soloGameId={soloGameId} onLeave={() => {
@@ -335,11 +354,68 @@ export function Lobby({ session, soloGameId, onLeave }: {
   );
 }
 
-function SoloLaunchScreen({ gameId, status, message, onCancel }: {
+function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
+  session: RoomSessionResponse;
+  gameId: SoloGameId;
+  onValid: () => void;
+  onInvalid: () => void;
+  onCancel: () => void;
+}) {
+  const [checking, setChecking] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const check = useCallback(async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      await validateRoomSession(session.roomCode, session.sessionToken);
+      onValid();
+    } catch (caught) {
+      if (caught instanceof ApiError && ["ROOM_NOT_FOUND", "ROOM_EXPIRED", "INVALID_SESSION"].includes(caught.code)) {
+        onInvalid();
+        return;
+      }
+      setError(caught instanceof ApiError ? caught.message : "This session could not be restored.");
+      setChecking(false);
+    }
+  }, [onInvalid, onValid, session.roomCode, session.sessionToken]);
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void check();
+  }, [check]);
+
+  return (
+    <main className="lobby-shell afterprint-room">
+      <header className="lobby-header">
+        <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); onCancel(); }} aria-label="Return to the main page">
+          <span>TA</span><strong>Team Arcade</strong>
+        </a>
+        <div className={`connection-badge ${error ? "error" : "connecting"}`} role="status" aria-live="polite">
+          <i aria-hidden="true" /> {error ? "Needs attention" : "Restoring…"}
+        </div>
+      </header>
+      <div className="lobby-layout">
+        <SoloLaunchScreen
+          gameId={gameId}
+          status={error ? "error" : "connecting"}
+          message={error ?? (checking ? "Checking your saved puzzle…" : null)}
+          onCancel={onCancel}
+          onRetry={error ? () => { void check(); } : undefined}
+        />
+      </div>
+      <p className="sr-only" aria-live="polite">Restoring solo game.</p>
+    </main>
+  );
+}
+
+function SoloLaunchScreen({ gameId, status, message, onCancel, onRetry }: {
   gameId: SoloGameId;
   status: ReturnType<typeof useRoomSocket>["status"];
   message: string | null;
   onCancel: () => void;
+  onRetry?: (() => void) | undefined;
 }) {
   const game = SINGLE_PLAYER_GAME_CATALOG.find((candidate) => candidate.id === gameId);
   const statusCopy = status === "offline"
@@ -355,6 +431,7 @@ function SoloLaunchScreen({ gameId, status, message, onCancel }: {
       <p className="eyebrow">Single-player</p>
       <h1 id="solo-launch-title">Opening {game?.name ?? "game"}</h1>
       <p role="status" aria-live="polite">{message ?? statusCopy}</p>
+      {onRetry && <button className="primary-button solo-retry" type="button" onClick={onRetry}>Try again</button>}
       <button className="text-button" type="button" onClick={onCancel}>Return to main page</button>
     </section>
   );
@@ -389,6 +466,12 @@ function readStoredSession(roomCode: string): RoomSessionResponse | null {
   } catch {
     return null;
   }
+}
+
+function clearSoloSession(session: RoomSessionResponse, gameId: SoloGameId): void {
+  localStorage.removeItem(sessionStorageKey(session.roomCode));
+  localStorage.removeItem(soloRoomPointerStorageKey(gameId));
+  window.history.replaceState(null, "", "/");
 }
 
 function initials(displayName: string): string {

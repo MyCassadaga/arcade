@@ -18,6 +18,7 @@ export const roomCodeSchema = z
 
 export const createRoomRequestSchema = z.object({ displayName: displayNameSchema }).strict();
 export const joinRoomRequestSchema = z.object({ displayName: displayNameSchema }).strict();
+export const roomSessionRequestSchema = z.object({ sessionToken: z.string().min(32).max(200) }).strict();
 
 const requestIdSchema = z.string().min(1).max(100);
 
@@ -209,7 +210,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("room.reconnect"),
     requestId: requestIdSchema,
-    payload: z.object({ sessionToken: z.string().min(32).max(200) }).strict()
+    payload: roomSessionRequestSchema
   }).strict(),
   z.object({
     type: z.literal("host.selectGame"),
