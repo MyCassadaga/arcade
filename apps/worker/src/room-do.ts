@@ -81,7 +81,9 @@ interface ShirtFightAssetEntry {
   status: "reserved" | "finalized";
   createdAt: number;
   cleanupAt?: number;
-  retryCount: number;
+  fallbackRetryCount: number;
+  fallbackRetryAt: number | undefined;
+  cleanupRetryCount: number;
 }
 
 interface ShirtFightAssetManifest {
@@ -153,7 +155,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       return this.openSocket(request);
     }
     if (request.method === "POST" && url.pathname === "/internal/shirt-fight/drawings") {
-      return this.ctx.blockConcurrencyWhile(() => this.uploadShirtFightDrawing(request));
+      return this.receiveShirtFightDrawing(request);
     }
     const assetMatch = url.pathname.match(/^\/internal\/shirt-fight\/assets\/([0-9a-f-]{36})$/u);
     if (request.method === "GET" && assetMatch?.[1]) {
@@ -250,7 +252,17 @@ export class RoomDurableObject extends DurableObject<Env> {
       : jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
   }
 
-  private async uploadShirtFightDrawing(request: Request): Promise<Response> {
+  private async receiveShirtFightDrawing(request: Request): Promise<Response> {
+    const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (contentType !== "image/webp") return jsonError("INVALID_COMMAND", "Drawings must be WebP images.", 415);
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is too large.", 413);
+    const bytes = await readBoundedBytes(request, MAX_DRAWING_BYTES);
+    if (!bytes) return jsonError("INVALID_COMMAND", "Drawing image is invalid or too large.", 413);
+    return this.ctx.blockConcurrencyWhile(() => this.uploadShirtFightDrawing(request, bytes));
+  }
+
+  private async uploadShirtFightDrawing(request: Request, bytes: Uint8Array): Promise<Response> {
     const metadata = await this.activeMetadata();
     if (metadata instanceof Response) return metadata;
     const player = await this.authenticateHttp(request);
@@ -264,12 +276,6 @@ export class RoomDurableObject extends DurableObject<Env> {
     if (missingShirtFightDrawings(game.state).every((slot) => slot.playerId !== player.id)) {
       return jsonError("ALREADY_SUBMITTED", "That drawing is already finalized.", 409);
     }
-    const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-    if (contentType !== "image/webp") return jsonError("INVALID_COMMAND", "Drawings must be WebP images.", 415);
-    const declaredLength = Number(request.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is too large.", 413);
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    if (bytes.byteLength < 20 || bytes.byteLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is invalid or too large.", 413);
     const dimensions = readWebpDimensions(bytes);
     if (!dimensions || dimensions.width !== 600 || dimensions.height !== 800) {
       return jsonError("INVALID_COMMAND", "Drawings must be a 600 by 800 WebP image.", 400);
@@ -284,20 +290,30 @@ export class RoomDurableObject extends DurableObject<Env> {
     const confirmed = await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey);
     if (!confirmed) return jsonError("SERVER_ERROR", "The drawing could not be confirmed. Try again.", 503);
     const now = Date.now();
+    await this.reconcileShirtFightDue(now, true);
+    const current = this.readGame();
+    if (current?.gameId !== "shirt-fight" || current.state.gameInstanceId !== game.state.gameInstanceId
+      || current.state.phase !== "drawing" || current.state.generationRound !== slot.round
+      || current.state.drawingNumber !== slot.drawingNumber || current.state.deadlineAt === undefined
+      || now >= current.state.deadlineAt || missingShirtFightDrawings(current.state).every((item) => item.playerId !== player.id)) {
+      this.updateAssetEntry(entry.drawingId, (item) => item.status === "reserved" ? { ...item, cleanupAt: now + DRAWING_RETENTION_MS } : item);
+      await this.scheduleAlarm();
+      return jsonError("STALE_PHASE", "That drawing phase is closed.", 409);
+    }
     const drawing: ShirtFightDrawing = {
       id: entry.drawingId,
       artistPlayerId: player.id,
       round: slot.round,
       drawingNumber: slot.drawingNumber,
       createdAt: now,
-      durationMs: Math.max(0, now - game.state.phaseStartedAt),
+      durationMs: Math.max(0, now - current.state.phaseStartedAt),
       width: 600,
       height: 800,
       byteLength: bytes.byteLength,
       mediaType: "image/webp",
       fallback: false
     };
-    const result = registerShirtFightDrawing(game.state, drawing, now);
+    const result = registerShirtFightDrawing(current.state, drawing, now);
     this.ctx.storage.transactionSync(() => {
       this.writeGame({ gameId: "shirt-fight", state: result.state });
       this.updateAssetEntry(entry.drawingId, (item) => ({ ...item, status: "finalized" }));
@@ -572,8 +588,11 @@ export class RoomDurableObject extends DurableObject<Env> {
     if (message.type === "host.backToArcade") {
       const metadata = this.readMetadata();
       if (!metadata) return;
+      const currentGame = this.readGame();
+      const cleanupAt = Date.now() + DRAWING_RETENTION_MS;
       this.ctx.storage.transactionSync(() => {
         this.writeMetadata({ ...metadata, roomPhase: "lobby", selectedGameId: null, lastActivityAt: Date.now() });
+        if (currentGame?.gameId === "shirt-fight") this.markGameAssetsForCleanup(currentGame.state.gameInstanceId, cleanupAt);
         this.clearGame();
         this.markProcessed(playerId, message.requestId);
       });
@@ -837,7 +856,9 @@ export class RoomDurableObject extends DurableObject<Env> {
       drawingNumber,
       status: "reserved",
       createdAt: Date.now(),
-      retryCount: 0
+      fallbackRetryCount: 0,
+      fallbackRetryAt: undefined,
+      cleanupRetryCount: 0
     };
     this.writeAssetManifest({ entries: [...manifest.entries, entry] });
     return entry;
@@ -856,32 +877,39 @@ export class RoomDurableObject extends DurableObject<Env> {
       const fallbacks: ShirtFightFallbackDrawing[] = [];
       for (const slot of missingShirtFightDrawings(game.state)) {
         const entry = this.ensureAssetReservation(metadata.roomCode, game.state, slot.playerId, slot.round, slot.drawingNumber);
-        if (!await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey)) {
+        if (entry.fallbackRetryAt !== undefined && now < entry.fallbackRetryAt) return;
+        try {
           await this.env.SHIRT_FIGHT_DRAWINGS.put(entry.objectKey, decodeBase64(FALLBACK_WEBP), {
             httpMetadata: { contentType: "image/webp", cacheControl: "private, no-store" },
             customMetadata: { drawingId: entry.drawingId, gameInstanceId: entry.gameInstanceId, fallback: "true" }
           });
+          const confirmed = await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey);
+          if (!confirmed) throw new Error("Fallback drawing could not be confirmed");
+          fallbacks.push({
+            id: entry.drawingId,
+            playerId: slot.playerId,
+            round: slot.round,
+            drawingNumber: slot.drawingNumber,
+            createdAt: game.state.deadlineAt,
+            width: 600,
+            height: 800,
+            byteLength: confirmed.size,
+            mediaType: "image/webp"
+          });
+        } catch {
+          const fallbackRetryCount = entry.fallbackRetryCount + 1;
+          const delay = Math.min(CLEANUP_RETRY_MAX_MS, CLEANUP_RETRY_BASE_MS * 2 ** Math.min(fallbackRetryCount - 1, 6));
+          this.updateAssetEntry(entry.drawingId, (item) => ({ ...item, fallbackRetryCount, fallbackRetryAt: now + delay }));
+          await this.scheduleAlarm();
+          return;
         }
-        const confirmed = await this.env.SHIRT_FIGHT_DRAWINGS.head(entry.objectKey);
-        if (!confirmed) throw new Error("Fallback drawing could not be confirmed");
-        fallbacks.push({
-          id: entry.drawingId,
-          playerId: slot.playerId,
-          round: slot.round,
-          drawingNumber: slot.drawingNumber,
-          createdAt: game.state.deadlineAt,
-          width: 600,
-          height: 800,
-          byteLength: confirmed.size,
-          mediaType: "image/webp"
-        });
       }
       const result = advanceShirtFightDue(game.state, now, fallbacks);
       if (result.state === game.state) return;
       const completedNow = result.state.phase === "gameResults" && game.state.phase !== "gameResults";
       this.ctx.storage.transactionSync(() => {
         this.writeGame({ gameId: "shirt-fight", state: result.state });
-        for (const fallback of fallbacks) this.updateAssetEntry(fallback.id, (entry) => ({ ...entry, status: "finalized" }));
+        for (const fallback of fallbacks) this.updateAssetEntry(fallback.id, (entry) => ({ ...entry, status: "finalized", fallbackRetryAt: undefined }));
         if (completedNow) this.markGameAssetsForCleanup(result.state.gameInstanceId, now + DRAWING_RETENTION_MS);
       });
       if (shouldBroadcast) this.broadcastGameState();
@@ -900,9 +928,9 @@ export class RoomDurableObject extends DurableObject<Env> {
         await this.env.SHIRT_FIGHT_DRAWINGS.delete(entry.objectKey);
         manifest = { entries: manifest.entries.filter((item) => item.drawingId !== entry.drawingId) };
       } catch {
-        const retryCount = entry.retryCount + 1;
-        const delay = Math.min(CLEANUP_RETRY_MAX_MS, CLEANUP_RETRY_BASE_MS * 2 ** Math.min(retryCount - 1, 6));
-        manifest = { entries: manifest.entries.map((item) => item.drawingId === entry.drawingId ? { ...item, retryCount, cleanupAt: now + delay } : item) };
+        const cleanupRetryCount = entry.cleanupRetryCount + 1;
+        const delay = Math.min(CLEANUP_RETRY_MAX_MS, CLEANUP_RETRY_BASE_MS * 2 ** Math.min(cleanupRetryCount - 1, 6));
+        manifest = { entries: manifest.entries.map((item) => item.drawingId === entry.drawingId ? { ...item, cleanupRetryCount, cleanupAt: now + delay } : item) };
       }
       this.writeAssetManifest(manifest);
     }
@@ -1022,7 +1050,16 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
     const game = this.readGame();
     if (metadata.expiredAt === undefined && game?.gameId === "shirt-fight" && game.state.deadlineAt !== undefined) {
-      nextAlarm = Math.min(nextAlarm, game.state.deadlineAt);
+      let gameDue = game.state.deadlineAt;
+      if (game.state.phase === "drawing" && gameDue <= Date.now()) {
+        const manifest = this.readAssetManifest();
+        const retryTimes = missingShirtFightDrawings(game.state).flatMap((slot) => {
+          const entry = manifest.entries.find((item) => item.gameInstanceId === game.state.gameInstanceId && item.playerId === slot.playerId && item.round === slot.round && item.drawingNumber === slot.drawingNumber);
+          return entry?.fallbackRetryAt !== undefined && entry.fallbackRetryAt > Date.now() ? [entry.fallbackRetryAt] : [];
+        });
+        if (retryTimes.length) gameDue = Math.min(...retryTimes);
+      }
+      nextAlarm = Math.min(nextAlarm, gameDue);
     }
     for (const entry of this.readAssetManifest().entries) {
       if (entry.cleanupAt !== undefined) nextAlarm = Math.min(nextAlarm, entry.cleanupAt);
@@ -1033,6 +1070,34 @@ export class RoomDurableObject extends DurableObject<Env> {
 
 function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+async function readBoundedBytes(request: Request, limit: number): Promise<Uint8Array | null> {
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) {
+        await reader.cancel("payload too large");
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 export function readWebpDimensions(bytes: Uint8Array): { width: number; height: number } | null {
