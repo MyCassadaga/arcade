@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
   PUBLIC_GAME_CATALOG,
   SINGLE_PLAYER_GAME_CATALOG,
@@ -12,6 +12,8 @@ import { ApiError, createRoom, isTerminalRoomSessionError, joinRoom, validateRoo
 import { useRoomSocket } from "./useRoomSocket";
 import { GameScreen } from "./GameScreen";
 import { nextSoloLaunchCommand, soloRoomPointerStorageKey, type SoloLaunchRequestIds } from "./solo-launch";
+import { clearMultiplayerRoomPointer, multiplayerRoomPointerStorageKey, storeMultiplayerRoomPointer } from "./room-resume";
+import { clearPlayerDrawingDrafts } from "./shirt-fight-draft";
 
 type EntryMode = "create" | "join";
 type SoloGameId = (typeof SINGLE_PLAYER_GAME_CATALOG)[number]["id"];
@@ -24,32 +26,38 @@ interface InitialRoute {
 
 export function App() {
   const initialRoute = useMemo(readInitialRoute, []);
-  const [session, setSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? null : initialRoute.session);
-  const [soloResumeSession, setSoloResumeSession] = useState<RoomSessionResponse | null>(initialRoute.soloGameId ? initialRoute.session : null);
+  const [session, setSession] = useState<RoomSessionResponse | null>(null);
+  const [resumeSession, setResumeSession] = useState<RoomSessionResponse | null>(initialRoute.session);
   const [inviteCode, setInviteCode] = useState(initialRoute.inviteCode);
   const [soloGameId, setSoloGameId] = useState<SoloGameId | null>(initialRoute.soloGameId);
+  const [entryError, setEntryError] = useState<string | null>(null);
 
-  if (soloResumeSession && soloGameId) {
-    return <SoloResumeGate
-      session={soloResumeSession}
+  if (resumeSession) {
+    const resumeIsSolo = soloGameId !== null;
+    return <SessionResumeGate
+      session={resumeSession}
       gameId={soloGameId}
-      onValid={() => { setSession(soloResumeSession); setSoloResumeSession(null); }}
+      onValid={() => { setSession(resumeSession); setResumeSession(null); }}
       onInvalid={() => {
-        clearSoloSession(soloResumeSession, soloGameId);
-        setSoloResumeSession(null);
+        clearStoredSession(resumeSession, soloGameId);
+        setInviteCode(resumeIsSolo ? "" : resumeSession.roomCode);
+        setEntryError(resumeIsSolo ? "That saved game is no longer available." : "Your saved seat is no longer available. You can try joining the room again.");
+        setResumeSession(null);
         setSoloGameId(null);
       }}
       onCancel={() => {
-        clearSoloSession(soloResumeSession, soloGameId);
-        setSoloResumeSession(null);
+        clearStoredSession(resumeSession, soloGameId);
+        setInviteCode("");
+        setResumeSession(null);
         setSoloGameId(null);
       }}
     />;
   }
 
   if (session) {
-    return <Lobby session={session} soloGameId={soloGameId} onLeave={() => {
-      setInviteCode("");
+    return <Lobby session={session} soloGameId={soloGameId} onLeave={(nextInviteCode = "") => {
+      setInviteCode(nextInviteCode);
+      setEntryError(nextInviteCode ? "That seat ended. Enter your name to try joining the room again." : null);
       setSoloGameId(null);
       setSession(null);
     }} />;
@@ -57,20 +65,22 @@ export function App() {
 
   return <EntryScreen
     initialCode={inviteCode}
+    initialError={entryError}
     onRoomSession={(nextSession) => { setSoloGameId(null); setSession(nextSession); }}
     onSoloSession={(nextSession, gameId) => { setSoloGameId(gameId); setSession(nextSession); }}
   />;
 }
 
-function EntryScreen({ initialCode, onRoomSession, onSoloSession }: {
+function EntryScreen({ initialCode, initialError, onRoomSession, onSoloSession }: {
   initialCode: string;
+  initialError: string | null;
   onRoomSession: (session: RoomSessionResponse) => void;
   onSoloSession: (session: RoomSessionResponse, gameId: SoloGameId) => void;
 }) {
   const [mode, setMode] = useState<EntryMode>(initialCode ? "join" : "create");
   const [displayName, setDisplayName] = useState("");
   const [roomCode, setRoomCode] = useState(initialCode);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [submitting, setSubmitting] = useState(false);
   const [soloError, setSoloError] = useState<string | null>(null);
   const [soloSubmitting, setSoloSubmitting] = useState<SoloGameId | null>(null);
@@ -95,6 +105,7 @@ function EntryScreen({ initialCode, onRoomSession, onSoloSession }: {
         ? await createRoom(parsedName.data)
         : await joinRoom(parsedCode?.data ?? "", parsedName.data);
       localStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
+      storeMultiplayerRoomPointer(nextSession.roomCode);
       window.history.replaceState(null, "", `/?room=${encodeURIComponent(nextSession.roomCode)}`);
       onRoomSession(nextSession);
     } catch (caught) {
@@ -202,12 +213,13 @@ function EntryScreen({ initialCode, onRoomSession, onSoloSession }: {
 export function Lobby({ session, soloGameId, onLeave }: {
   session: RoomSessionResponse;
   soloGameId: SoloGameId | null;
-  onLeave: () => void;
+  onLeave: (nextInviteCode?: string) => void;
 }) {
+  const viewportHeight = useViewportHeight();
   const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(
     session.roomCode,
     session.sessionToken,
-    soloGameId !== null
+    true
   );
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const soloRequestIds = useRef<SoloLaunchRequestIds | null>(null);
@@ -237,10 +249,17 @@ export function Lobby({ session, soloGameId, onLeave }: {
 
   const leave = useCallback(() => {
     localStorage.removeItem(sessionStorageKey(session.roomCode));
+    clearPlayerDrawingDrafts(session.roomCode, session.playerId);
     if (soloGameId) localStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
+    else clearMultiplayerRoomPointer(session.roomCode);
     window.history.replaceState(null, "", "/");
     onLeave();
-  }, [onLeave, session.roomCode, soloGameId]);
+  }, [onLeave, session.playerId, session.roomCode, soloGameId]);
+
+  const returnAfterTerminalSession = useCallback(() => {
+    window.history.replaceState(null, "", `/?room=${encodeURIComponent(session.roomCode)}`);
+    onLeave(session.roomCode);
+  }, [onLeave, session.roomCode]);
 
   useEffect(() => {
     if (!soloGameId || status !== "connected") return;
@@ -255,11 +274,19 @@ export function Lobby({ session, soloGameId, onLeave }: {
   }, [commandPending, game, room, send, soloGameId, status]);
 
   useEffect(() => {
-    if (soloGameId && fatalSession) leave();
-  }, [fatalSession, leave, soloGameId]);
+    if (!fatalSession) return;
+    localStorage.removeItem(sessionStorageKey(session.roomCode));
+    clearPlayerDrawingDrafts(session.roomCode, session.playerId);
+    if (soloGameId) localStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
+    else clearMultiplayerRoomPointer(session.roomCode);
+    if (soloGameId) leave();
+  }, [fatalSession, leave, session.playerId, session.roomCode, soloGameId]);
 
   return (
-    <main className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""}`}>
+    <main
+      className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""} ${game?.gameId === "shirt-fight" ? "shirt-fight-room" : ""}`}
+      style={{ "--arcade-viewport-height": `${viewportHeight}px` } as CSSProperties}
+    >
       <header className="lobby-header">
         <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); leave(); }} aria-label={soloGameId ? "Return to the main page" : "Leave room and return home"}>
           <span>TA</span><strong>Team Arcade</strong>
@@ -290,6 +317,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
         <div className="status-panel" role="alert">
           <strong>{status === "offline" ? "You’re offline." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
           <span>{message ?? (status === "offline" ? "We’ll reconnect when your network returns." : "Your seat is saved while we reconnect.")}</span>
+          {fatalSession && !soloGameId && <button className="text-button" type="button" onClick={returnAfterTerminalSession}>Try joining again</button>}
         </div>
       )}
 
@@ -358,9 +386,9 @@ export function Lobby({ session, soloGameId, onLeave }: {
   );
 }
 
-function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
+function SessionResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
   session: RoomSessionResponse;
-  gameId: SoloGameId;
+  gameId: SoloGameId | null;
   onValid: () => void;
   onInvalid: () => void;
   onCancel: () => void;
@@ -391,7 +419,7 @@ function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
   }, [check]);
 
   return (
-    <main className="lobby-shell afterprint-room">
+    <main className={`lobby-shell ${gameId ? "afterprint-room" : ""}`}>
       <header className="lobby-header">
         <a className="compact-brand" href="/" onClick={(event) => { event.preventDefault(); onCancel(); }} aria-label="Return to the main page">
           <span>TA</span><strong>Team Arcade</strong>
@@ -400,16 +428,23 @@ function SoloResumeGate({ session, gameId, onValid, onInvalid, onCancel }: {
           <i aria-hidden="true" /> {error ? "Needs attention" : "Restoring…"}
         </div>
       </header>
-      <div className="lobby-layout">
-        <SoloLaunchScreen
+      <div className="lobby-layout resume-layout">
+        {gameId ? <SoloLaunchScreen
           gameId={gameId}
           status={error ? "error" : "connecting"}
           message={error ?? (checking ? "Checking your saved puzzle…" : null)}
           onCancel={onCancel}
           onRetry={error ? () => { void check(); } : undefined}
-        />
+        /> : <section className="solo-launch" aria-labelledby="room-resume-title">
+          <span className="solo-launch-icon" aria-hidden="true">↻</span>
+          <p className="eyebrow">Saved multiplayer seat</p>
+          <h1 id="room-resume-title">Rejoining room {session.roomCode}</h1>
+          <p role="status" aria-live="polite">{error ?? (checking ? "Checking your saved seat…" : "Preparing the room…")}</p>
+          {error && <button className="primary-button solo-retry" type="button" onClick={() => { void check(); }}>Try again</button>}
+          <button className="text-button" type="button" onClick={onCancel}>Return to main page</button>
+        </section>}
       </div>
-      <p className="sr-only" aria-live="polite">Restoring solo game.</p>
+      <p className="sr-only" aria-live="polite">{gameId ? "Restoring solo game." : "Restoring multiplayer room."}</p>
     </main>
   );
 }
@@ -448,14 +483,25 @@ function readInitialRoute(): InitialRoute {
 
   const requestedGameId = params.get("play");
   const soloGame = SINGLE_PLAYER_GAME_CATALOG.find((game) => game.id === requestedGameId);
-  if (!soloGame) return { inviteCode: "", session: null, soloGameId: null };
-  const pointer = localStorage.getItem(soloRoomPointerStorageKey(soloGame.id)) ?? "";
-  const roomCode = roomCodeSchema.safeParse(pointer).data;
-  const session = roomCode ? readStoredSession(roomCode) : null;
-  if (session) return { inviteCode: "", session, soloGameId: soloGame.id };
-  localStorage.removeItem(soloRoomPointerStorageKey(soloGame.id));
-  if (roomCode) localStorage.removeItem(sessionStorageKey(roomCode));
-  window.history.replaceState(null, "", "/");
+  if (soloGame) {
+    const pointer = localStorage.getItem(soloRoomPointerStorageKey(soloGame.id)) ?? "";
+    const roomCode = roomCodeSchema.safeParse(pointer).data;
+    const session = roomCode ? readStoredSession(roomCode) : null;
+    if (session) return { inviteCode: "", session, soloGameId: soloGame.id };
+    localStorage.removeItem(soloRoomPointerStorageKey(soloGame.id));
+    if (roomCode) localStorage.removeItem(sessionStorageKey(roomCode));
+    window.history.replaceState(null, "", "/");
+    return { inviteCode: "", session: null, soloGameId: null };
+  }
+
+  const pointer = roomCodeSchema.safeParse(localStorage.getItem(multiplayerRoomPointerStorageKey) ?? "").data;
+  const session = pointer ? readStoredSession(pointer) : null;
+  if (pointer && session) {
+    window.history.replaceState(null, "", `/?room=${encodeURIComponent(pointer)}`);
+    return { inviteCode: pointer, session, soloGameId: null };
+  }
+  if (pointer) localStorage.removeItem(sessionStorageKey(pointer));
+  clearMultiplayerRoomPointer();
   return { inviteCode: "", session: null, soloGameId: null };
 }
 
@@ -472,12 +518,29 @@ function readStoredSession(roomCode: string): RoomSessionResponse | null {
   }
 }
 
-function clearSoloSession(session: RoomSessionResponse, gameId: SoloGameId): void {
+function clearStoredSession(session: RoomSessionResponse, gameId: SoloGameId | null): void {
   localStorage.removeItem(sessionStorageKey(session.roomCode));
-  localStorage.removeItem(soloRoomPointerStorageKey(gameId));
+  clearPlayerDrawingDrafts(session.roomCode, session.playerId);
+  if (gameId) localStorage.removeItem(soloRoomPointerStorageKey(gameId));
+  else clearMultiplayerRoomPointer(session.roomCode);
   window.history.replaceState(null, "", "/");
 }
 
 function initials(displayName: string): string {
   return displayName.split(/\s+/u).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+}
+
+function useViewportHeight(): number {
+  const readHeight = () => Math.round(Math.min(window.visualViewport?.height ?? window.innerHeight, window.innerHeight));
+  const [height, setHeight] = useState(readHeight);
+  useEffect(() => {
+    const update = () => setHeight(readHeight());
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
+  }, []);
+  return height;
 }

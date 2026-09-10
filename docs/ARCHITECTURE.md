@@ -29,7 +29,7 @@ Owns:
 - WebSocket connection/reconnection behavior;
 - optimistic affordances only when they cannot affect authoritative outcome.
 
-The main page launches catalogued single-player games without room ceremony. For AFTERPRINT, the client creates the existing one-player room internally, stores the session token under the established room-keyed local-storage key, and stores only a game-to-room-code pointer for refresh recovery. Before reopening a stored solo session, it posts the token to the bounded session-validation route; a typed missing/expired/invalid response clears both local entries, while a network failure preserves them and offers a retry. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
+The main page launches catalogued single-player games without room ceremony. For multiplayer rooms, the client stores the opaque session under the room-keyed local-storage key plus one room-code-only resume pointer. Reloading the room URL or returning to the root route validates that saved token before restoring the same seat; explicit Leave or a terminal invalid/expired response clears the token, pointer, and any private local Shirt Fight draft. A recoverable validation failure preserves the saved session and offers retry. For AFTERPRINT, the client creates the existing one-player room internally and stores only a game-to-room-code pointer alongside the established session. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
 
 Does not own:
 - scoring;
@@ -67,7 +67,7 @@ Owns:
 
 System Crawl stays hidden and uses its existing separate routing; it is outside this refactor.
 
-`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels. AFTERPRINT has a compact solo screen that reuses the pure simulator for visual replay while the Worker remains authoritative for attempts and completion. Shirt Fight adds a touch-first 600×800 canvas, rapid slogan entry, independent drawing/slogan selection, private voting controls, and a host-selectable public display that consumes only the public projection.
+`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels. AFTERPRINT has a compact solo screen that reuses the pure simulator for visual replay while the Worker remains authoritative for attempts and completion. Shirt Fight adds a touch-first 600×800 backing canvas that scales into the live phone viewport, rapid slogan entry, independent drawing/slogan selection, private voting controls, and a host-selectable public display that consumes only the public projection. During an open slot, bounded vector strokes are retained in tab-scoped session storage under the exact room/player/game/round/drawing identity and restored only after the authoritative projection confirms that slot is still open. Native canvas WebP is verified before upload; a lazy bundled encoder handles browsers that silently return another format.
 
 Shirt Fight drawing binaries use the private `SHIRT_FIGHT_DRAWINGS` R2 binding and application-owned HTTP routes. A server-only Durable Object manifest reserves opaque object keys before upload, while the stored game JSON contains only validated drawing IDs and bounded metadata. Session credentials travel in an `Authorization` header, never an asset URL. The Durable Object authorizes each read against the viewer and current phase; responses are private/non-store and never expose R2 keys or URLs.
 
@@ -143,6 +143,8 @@ Client reconnection algorithm:
 - server rebinds socket to player identity;
 - server sends complete current player-specific snapshot;
 - client replaces local game state with server snapshot.
+- only the current socket owns status, messages, heartbeat, and retry scheduling; close events from a replaced socket are ignored.
+- a current unsubmitted Shirt Fight draft is redrawn only after the replacement snapshot confirms its exact slot; submitted, advanced, terminal, or explicitly left sessions retire local draft data without auto-upload.
 
 ## Security boundaries
 

@@ -47,13 +47,17 @@ export function useRoomSocket(
         setStatus("offline");
         return;
       }
+      const current = socketRef.current;
+      if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
+      window.clearTimeout(reconnectTimer);
+      window.clearInterval(heartbeatTimer);
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${encodeURIComponent(roomCode)}/socket`);
       socketRef.current = socket;
 
       socket.addEventListener("open", () => {
-        if (disposed) return;
+        if (disposed || socketRef.current !== socket) return;
         socket.send(JSON.stringify({
           type: "room.reconnect",
           requestId: crypto.randomUUID(),
@@ -62,6 +66,7 @@ export function useRoomSocket(
       });
 
       socket.addEventListener("message", (event: MessageEvent<string>) => {
+        if (disposed || socketRef.current !== socket) return;
         let serverMessage: ServerMessage;
         try {
           serverMessage = JSON.parse(event.data) as ServerMessage;
@@ -92,7 +97,8 @@ export function useRoomSocket(
       });
 
       const handleClose = async (event: CloseEvent) => {
-        if (disposed || fatal) return;
+        if (disposed || fatal || socketRef.current !== socket) return;
+        socketRef.current = null;
         pendingRequestIdsRef.current.clear();
         setCommandPending(false);
         window.clearInterval(heartbeatTimer);
@@ -161,8 +167,9 @@ export function useRoomSocket(
       window.clearInterval(heartbeatTimer);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
-      socketRef.current?.close();
+      const socket = socketRef.current;
       socketRef.current = null;
+      socket?.close();
     };
   }, [finishRequest, revalidateOpaqueFailures, roomCode, sessionToken]);
 

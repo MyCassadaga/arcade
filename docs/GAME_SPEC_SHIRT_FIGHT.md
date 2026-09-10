@@ -20,7 +20,7 @@ Every shirt that wins a generation-round matchup qualifies once for the final po
 
 ## Drawings and retention
 
-The browser canvas is 600×800 and exports bounded WebP only when finalized. WebSocket state stores metadata, never drawing bytes or R2 keys. A server-only manifest reserves each non-guessable object key before `R2.put`, confirms the object before finalizing game metadata, and retains enough information to clean up a partial upload.
+The browser canvas has a fixed 600×800 backing surface while its visible size scales to the available phone viewport. It verifies native canvas WebP output and adaptively compresses it below the 160,000-byte bound; if a browser silently falls back to another format, a lazy bundled encoder produces the required WebP from the same pixels. During an open drawing slot, bounded strokes may be stored only in that tab's session storage under the exact room, player, game instance, round, and drawing identity. Authoritative submitted/advanced/terminal state or explicit Leave retires the draft, and recovery never auto-uploads it. WebSocket state stores metadata, never drawing bytes or R2 keys. A server-only manifest reserves each non-guessable object key before `R2.put`, confirms the object before finalizing game metadata, and retains enough information to clean up a partial upload.
 
 Drawing reads use the same-origin application route with the room session token in the `Authorization` header. The Durable Object authorizes the viewer's own drawing, a current private assignment, or artwork in the current public matchup/reveal. It streams private, non-store bytes without redirects, R2 URLs, or object keys.
 

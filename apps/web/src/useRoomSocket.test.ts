@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isTerminalSessionClose, useRoomSocket } from "./useRoomSocket";
 
 class MockWebSocket extends EventTarget {
+  static readonly CONNECTING = 0;
   static readonly OPEN = 1;
+  static readonly CLOSING = 2;
   static instances: MockWebSocket[] = [];
   readonly send = vi.fn();
   readonly close = vi.fn();
@@ -16,6 +18,7 @@ class MockWebSocket extends EventTarget {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   MockWebSocket.instances = [];
   vi.unstubAllGlobals();
 });
@@ -80,5 +83,27 @@ describe("solo room-session revalidation", () => {
     expect(result.current.fatalSession).toBe(false);
     expect(result.current.status).toBe("reconnecting");
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("socket reconnect ownership", () => {
+  it("ignores a stale socket close after an online event starts its replacement", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const { result } = renderHook(() => useRoomSocket("ABCDE", "x".repeat(32), true));
+    const stale = MockWebSocket.instances[0] as MockWebSocket;
+    stale.readyState = MockWebSocket.CLOSING;
+
+    await act(() => window.dispatchEvent(new Event("online")));
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(1);
+    const current = MockWebSocket.instances[1] as MockWebSocket;
+
+    await act(() => stale.dispatchEvent(new CloseEvent("close", { code: 1006 })));
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(result.current.status).toBe("reconnecting");
+    expect(current.url).toContain("/api/rooms/ABCDE/socket");
   });
 });

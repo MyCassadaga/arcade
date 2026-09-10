@@ -202,6 +202,7 @@ Do not add game-specific Cloudflare storage or a separate transport.
 - **Wrangler cannot authenticate:** run `npx wrangler logout`, then `npx wrangler login`; in CI verify both Cloudflare secrets are set on the `production` environment.
 - **WebSocket stays reconnecting locally:** use the Worker URL at `http://localhost:8787`, or run both `npm run dev:worker` and `npm run dev:web`; confirm ports 8787 and 5173 are free and that a proxy/VPN is not blocking local WebSockets.
 - **Session ended after clearing browser storage:** anonymous session tokens cannot be recovered. Rejoin with a new unique display name, or create a new room if the old game is active.
+- **Returning to a multiplayer room:** ordinary reloads and returns to the main URL reuse the last saved room pointer and validate the existing anonymous seat before reconnecting. Explicitly choosing Leave clears that seat. A terminal saved session returns to a room-code-prefilled join screen; a network validation failure keeps the seat and offers retry.
 - **Room no longer exists:** rooms expire after 12 hours without activity and are intentionally unrecoverable.
 - **A disconnected host is still shown as host:** the 60-second reconnect grace period must elapse before the longest-connected active player is promoted.
 - **Local Durable Object state is surprising:** stop Wrangler and remove only the project-local `.wrangler/state` directory when a clean local room database is intentionally needed.

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlayerView, TypedGameViewerState } from "@team-arcade/shared";
 import { ShirtFightScreen } from "./ShirtFightScreen";
+import { drawingDraftStorageKey, writeDrawingDraft } from "./shirt-fight-draft";
 
 const players: PlayerView[] = [
   { id: "p1", displayName: "Ada", connected: true, isHost: true, score: 0 },
@@ -22,8 +23,12 @@ function game(overrides: Partial<Extract<TypedGameViewerState, { gameId: "shirt-
 }
 
 function renderGame(value: ReturnType<typeof game>, sendGame = vi.fn(() => true)) {
-  render(<ShirtFightScreen game={value} players={players} isHost roomCode="ABCDE" sessionToken={"s".repeat(43)} sendGame={sendGame} hostAdvance={() => true} playAgain={() => true} backToArcade={() => true} />);
+  render(shirtFightElement(value, sendGame));
   return sendGame;
+}
+
+function shirtFightElement(value: ReturnType<typeof game>, sendGame = vi.fn(() => true)) {
+  return <ShirtFightScreen game={value} players={players} playerId="p1" isHost roomCode="ABCDE" sessionToken={"s".repeat(43)} sendGame={sendGame} hostAdvance={() => true} playAgain={() => true} backToArcade={() => true} />;
 }
 
 beforeEach(() => {
@@ -31,7 +36,7 @@ beforeEach(() => {
   vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:drawing"), revokeObjectURL: vi.fn() });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     fillStyle: "", strokeStyle: "", lineWidth: 0, lineCap: "round", lineJoin: "round",
-    fillRect: vi.fn(), getImageData: vi.fn(() => ({}) as ImageData), putImageData: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn()
+    fillRect: vi.fn(), fill: vi.fn(), arc: vi.fn(), getImageData: vi.fn(() => ({}) as ImageData), putImageData: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn()
   } as unknown as CanvasRenderingContext2D);
 });
 
@@ -46,6 +51,36 @@ describe("Shirt Fight mobile presentation", () => {
     expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument();
     expect(screen.getByLabelText("Shirt drawing canvas")).toHaveAttribute("width", "600");
     expect(screen.getByLabelText("Shirt drawing canvas")).toHaveAttribute("height", "800");
+  });
+
+  it("retires a private draft when server authority says its slot finalized despite a lost upload response", () => {
+    const drawingGame = game();
+    const identity = { roomCode: "ABCDE", playerId: "p1", gameInstanceId: drawingGame.public.gameInstanceId, generationRound: 1, drawingNumber: 1 };
+    writeDrawingDraft(identity, [{ color: "blue", size: "medium", points: [{ x: 10, y: 20 }, { x: 30, y: 40 }] }]);
+    const view = render(shirtFightElement(drawingGame));
+    expect(sessionStorage.getItem(drawingDraftStorageKey(identity))).not.toBeNull();
+
+    view.rerender(shirtFightElement(game({ private: { drawingSubmitted: true } })));
+
+    expect(sessionStorage.getItem(drawingDraftStorageKey(identity))).toBeNull();
+    expect(screen.getByRole("heading", { name: "Drawing locked" })).toBeInTheDocument();
+  });
+
+  it("retires an offline private draft after the authoritative phase advances", () => {
+    const drawingGame = game();
+    const advancedPublic = { ...drawingGame.public };
+    delete advancedPublic.drawingNumber;
+    const identity = { roomCode: "ABCDE", playerId: "p1", gameInstanceId: drawingGame.public.gameInstanceId, generationRound: 1, drawingNumber: 1 };
+    writeDrawingDraft(identity, [{ color: "red", size: "small", points: [{ x: 12, y: 24 }] }]);
+    const view = render(shirtFightElement(drawingGame));
+
+    view.rerender(shirtFightElement(game({
+      phase: "slogans",
+      public: { ...advancedPublic, phase: "slogans", phaseNonce: 2 },
+      private: { slogans: [] }
+    })));
+
+    expect(sessionStorage.getItem(drawingDraftStorageKey(identity))).toBeNull();
   });
 
   it("submits multiple slogans quickly, clears the input, and retains accepted entries", async () => {

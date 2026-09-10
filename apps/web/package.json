@@ -9,12 +9,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@jsquash/webp": "^1.5.0",
     "@team-arcade/games": "0.1.0",
     "@team-arcade/shared": "0.1.0",
     "@vitejs/plugin-react": "6.1.0",
-    "vite": "8.2.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "vite": "8.2.2"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
