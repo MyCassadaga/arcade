@@ -1,6 +1,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isTerminalSessionClose, useRoomSocket } from "./useRoomSocket";
+import {
+  PLAYER_INACTIVITY_CLOSE_CODE,
+  PLAYER_INACTIVITY_CLOSE_REASON,
+  PLAYER_INACTIVITY_MS,
+  isInactivityClose,
+  isTerminalSessionClose,
+  useRoomSocket
+} from "./useRoomSocket";
 
 class MockWebSocket extends EventTarget {
   static readonly CONNECTING = 0;
@@ -38,6 +45,13 @@ describe("terminal room-session close classification", () => {
     [1011, "Server restart"]
   ])("keeps %i %s recoverable", (code, reason) => {
     expect(isTerminalSessionClose(code, reason)).toBe(false);
+  });
+});
+
+describe("inactivity close classification", () => {
+  it("matches only the application inactivity close", () => {
+    expect(isInactivityClose(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON)).toBe(true);
+    expect(isInactivityClose(1006, "")).toBe(false);
   });
 });
 
@@ -96,7 +110,7 @@ describe("socket reconnect ownership", () => {
 
     await act(() => window.dispatchEvent(new Event("online")));
     expect(MockWebSocket.instances).toHaveLength(2);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
     const current = MockWebSocket.instances[1] as MockWebSocket;
 
     await act(() => stale.dispatchEvent(new CloseEvent("close", { code: 1006 })));
@@ -105,5 +119,88 @@ describe("socket reconnect ownership", () => {
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(result.current.status).toBe("reconnecting");
     expect(current.url).toContain("/api/rooms/ABCDE/socket");
+  });
+});
+
+describe("idle connection traffic and timeout", () => {
+  it("sends no recurring application messages and server messages do not reset inactivity", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const { result } = renderHook(() => useRoomSocket("ABCDE", "x".repeat(32), true));
+    const socket = MockWebSocket.instances[0] as MockWebSocket;
+    socket.readyState = MockWebSocket.OPEN;
+
+    act(() => { socket.dispatchEvent(new Event("open")); });
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(socket.send.mock.calls[0]?.[0]))).toMatchObject({ type: "room.reconnect" });
+
+    await act(() => vi.advanceTimersByTimeAsync(PLAYER_INACTIVITY_MS - 1_000));
+    act(() => { socket.dispatchEvent(new MessageEvent("message", {
+      data: JSON.stringify({
+        type: "room.presence",
+        payload: { roomCode: "ABCDE", roomPhase: "lobby", selectedGameId: null, players: [] }
+      })
+    })); });
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(socket.close).toHaveBeenCalledWith(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+    expect(result.current.status).toBe("inactive");
+  });
+
+  it("resets the deadline only after a meaningful outbound command", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const { result } = renderHook(() => useRoomSocket("ABCDE", "x".repeat(32), true));
+    const socket = MockWebSocket.instances[0] as MockWebSocket;
+    socket.readyState = MockWebSocket.OPEN;
+    act(() => { socket.dispatchEvent(new Event("open")); });
+
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60 * 1_000));
+    act(() => {
+      expect(result.current.send({ type: "host.selectGame", requestId: "meaningful", payload: { gameId: "impostor" } })).toBe(true);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(PLAYER_INACTIVITY_MS - 1));
+    expect(socket.close).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(socket.close).toHaveBeenCalledWith(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+  });
+
+  it("does not reconnect after a server inactivity close until explicitly requested", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const { result } = renderHook(() => useRoomSocket("ABCDE", "x".repeat(32), true));
+    const socket = MockWebSocket.instances[0] as MockWebSocket;
+    socket.readyState = MockWebSocket.OPEN;
+    act(() => { socket.dispatchEvent(new Event("open")); });
+
+    act(() => { socket.dispatchEvent(new CloseEvent("close", {
+      code: PLAYER_INACTIVITY_CLOSE_CODE,
+      reason: PLAYER_INACTIVITY_CLOSE_REASON
+    })); });
+    expect(result.current.status).toBe("inactive");
+
+    await act(() => window.dispatchEvent(new Event("online")));
+    await act(() => vi.advanceTimersByTimeAsync(20_000));
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    act(() => result.current.reconnect());
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const replacement = MockWebSocket.instances[1] as MockWebSocket;
+    replacement.readyState = MockWebSocket.OPEN;
+    act(() => { replacement.dispatchEvent(new Event("open")); });
+    act(() => { replacement.dispatchEvent(new MessageEvent("message", {
+      data: JSON.stringify({
+        type: "room.snapshot",
+        payload: {
+          roomCode: "ABCDE",
+          roomPhase: "playing",
+          selectedGameId: "impostor",
+          players: [{ id: "player", displayName: "Ada", connected: true, isHost: true, score: 2 }]
+        }
+      })
+    })); });
+    expect(result.current.status).toBe("connected");
+    expect(result.current.room).toMatchObject({ roomPhase: "playing", selectedGameId: "impostor" });
   });
 });

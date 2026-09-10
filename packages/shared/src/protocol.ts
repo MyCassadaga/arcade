@@ -261,11 +261,6 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("game.command"),
     requestId: requestIdSchema,
     payload: z.object({ command: gameCommandSchema }).strict()
-  }).strict(),
-  z.object({
-    type: z.literal("ping"),
-    requestId: requestIdSchema,
-    payload: z.object({ clientTime: z.number().finite() }).strict()
   }).strict()
 ]);
 
@@ -503,8 +498,7 @@ export type ServerMessage =
   | { type: "room.presence"; payload: RoomView }
   | { type: "game.state"; payload: GameViewerState }
   | { type: "command.ack"; requestId: string; payload: { accepted: true } }
-  | { type: "error"; requestId?: string; payload: { code: ErrorCode; message: string } }
-  | { type: "pong"; payload: { serverTime: number } };
+  | { type: "error"; requestId?: string; payload: { code: ErrorCode; message: string } };
 
 export interface RoomSessionResponse {
   roomCode: string;

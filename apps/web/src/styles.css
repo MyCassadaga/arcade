@@ -76,7 +76,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .connection-badge { display: flex; align-items: center; gap: .45rem; border: 1px solid #d8d1c9; border-radius: 999px; padding: .45rem .7rem; color: #655e6c; font-size: .78rem; font-weight: 800; }
 .connection-badge i { width: .55rem; height: .55rem; border-radius: 50%; background: #f5a623; }
 .connection-badge.connected i { background: #43b86f; box-shadow: 0 0 0 4px #d9f3e2; }
-.connection-badge.offline i { background: #b0a8b4; }
+.connection-badge.offline i, .connection-badge.inactive i { background: #b0a8b4; }
 .connection-badge.error i { background: #c92f68; }
 .room-banner { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; padding: clamp(2rem, 5vw, 4.5rem) 0 2rem; }
 .room-banner .eyebrow, .section-heading .eyebrow, .players-heading .eyebrow { color: #7556e8; }

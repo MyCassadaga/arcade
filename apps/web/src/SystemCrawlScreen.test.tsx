@@ -260,6 +260,6 @@ function twoPlayerGameplay(): SystemCrawlState {
 
 function pushEvent(state: SystemCrawlState, type: SystemCrawlEvent["type"], data: SystemCrawlEvent["data"]) { state.events.push({ id: state.nextEventId++, round: state.round, type, data }); }
 function renderScreen(view: SystemCrawlViewerState, players: PlayerView[], sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; }), overrides: Partial<ScreenOptions> = {}) { return render(screenElement(view, players, sendGame, overrides)); }
-interface ScreenOptions { selfId: string; isHost: boolean; commandPending: boolean; status: "connecting" | "connected" | "reconnecting" | "offline" | "error"; }
+interface ScreenOptions { selfId: string; isHost: boolean; commandPending: boolean; status: "connecting" | "connected" | "reconnecting" | "offline" | "inactive" | "error"; }
 function screenElement(view: SystemCrawlViewerState, players: PlayerView[], sendGame = vi.fn((command: SystemCrawlCommand) => { void command; return true; }), overrides: Partial<ScreenOptions> = {}) { return <SystemCrawlScreen view={view} players={players} selfId={overrides.selfId ?? "host"} isHost={overrides.isHost ?? true} status={overrides.status ?? "connected"} commandPending={overrides.commandPending ?? false} sendGame={sendGame} playAgainNewSeed={() => true} replaySameSeed={() => true} backToArcade={() => true} />; }
 function player(id: string, displayName: string, isHost: boolean): PlayerView { return { id, displayName, isHost, connected: true, score: 0 }; }

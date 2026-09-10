@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, RoomView, ServerMessage, TypedGameViewerState } from "@team-arcade/shared";
 import { ApiError, isTerminalRoomSessionError, validateRoomSession } from "./api";
 
-export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "error";
+export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "inactive" | "error";
+
+export const PLAYER_INACTIVITY_MS = 15 * 60 * 1_000;
+export const PLAYER_INACTIVITY_CLOSE_CODE = 4000;
+export const PLAYER_INACTIVITY_CLOSE_REASON = "Player inactive";
 
 interface RoomSocketState {
   room: RoomView | null;
@@ -12,6 +16,7 @@ interface RoomSocketState {
   fatalSession: boolean;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
+  reconnect: () => void;
 }
 
 export function useRoomSocket(
@@ -27,6 +32,10 @@ export function useRoomSocket(
   const [commandPending, setCommandPending] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRequestIdsRef = useRef(new Set<string>());
+  const inactivityTimerRef = useRef<number | undefined>(undefined);
+  const resetInactivityDeadlineRef = useRef<() => void>(() => undefined);
+  const inactiveRef = useRef(false);
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
 
   const finishRequest = useCallback((requestId: string | undefined) => {
     if (!requestId) return;
@@ -37,12 +46,40 @@ export function useRoomSocket(
   useEffect(() => {
     let disposed = false;
     let reconnectTimer: number | undefined;
-    let heartbeatTimer: number | undefined;
     let attempt = 0;
     let fatal = false;
 
+    inactiveRef.current = false;
+
+    const clearInactivityTimer = () => {
+      window.clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = undefined;
+    };
+
+    const becomeInactive = (socket: WebSocket) => {
+      if (disposed || socketRef.current !== socket) return;
+      inactiveRef.current = true;
+      socketRef.current = null;
+      window.clearTimeout(reconnectTimer);
+      clearInactivityTimer();
+      pendingRequestIdsRef.current.clear();
+      setCommandPending(false);
+      setStatus("inactive");
+      setMessage("Disconnected after 15 minutes without player activity. Your seat is still saved.");
+      socket.close(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+    };
+
+    const resetInactivityDeadline = (socket: WebSocket) => {
+      clearInactivityTimer();
+      inactivityTimerRef.current = window.setTimeout(() => becomeInactive(socket), PLAYER_INACTIVITY_MS);
+    };
+    resetInactivityDeadlineRef.current = () => {
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) resetInactivityDeadline(socket);
+    };
+
     const connect = () => {
-      if (disposed) return;
+      if (disposed || inactiveRef.current) return;
       if (!navigator.onLine) {
         setStatus("offline");
         return;
@@ -50,7 +87,6 @@ export function useRoomSocket(
       const current = socketRef.current;
       if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
       window.clearTimeout(reconnectTimer);
-      window.clearInterval(heartbeatTimer);
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${encodeURIComponent(roomCode)}/socket`);
@@ -63,6 +99,7 @@ export function useRoomSocket(
           requestId: crypto.randomUUID(),
           payload: { sessionToken }
         } satisfies ClientMessage));
+        resetInactivityDeadline(socket);
       });
 
       socket.addEventListener("message", (event: MessageEvent<string>) => {
@@ -101,7 +138,14 @@ export function useRoomSocket(
         socketRef.current = null;
         pendingRequestIdsRef.current.clear();
         setCommandPending(false);
-        window.clearInterval(heartbeatTimer);
+        clearInactivityTimer();
+        if (isInactivityClose(event.code, event.reason)) {
+          inactiveRef.current = true;
+          window.clearTimeout(reconnectTimer);
+          setStatus("inactive");
+          setMessage("Disconnected after 15 minutes without player activity. Your seat is still saved.");
+          return;
+        }
         if (isTerminalSessionClose(event.code, event.reason)) {
           fatal = true;
           setMessage("This session is no longer available.");
@@ -135,23 +179,15 @@ export function useRoomSocket(
       socket.addEventListener("close", (event: CloseEvent) => {
         void handleClose(event);
       });
-
-      heartbeatTimer = window.setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: "ping",
-            requestId: crypto.randomUUID(),
-            payload: { clientTime: Date.now() }
-          } satisfies ClientMessage));
-        }
-      }, 25_000);
     };
 
     const handleOffline = () => {
+      if (inactiveRef.current) return;
       setStatus("offline");
       socketRef.current?.close();
     };
     const handleOnline = () => {
+      if (inactiveRef.current) return;
       window.clearTimeout(reconnectTimer);
       attempt = Math.max(attempt, 1);
       connect();
@@ -164,33 +200,46 @@ export function useRoomSocket(
     return () => {
       disposed = true;
       window.clearTimeout(reconnectTimer);
-      window.clearInterval(heartbeatTimer);
+      clearInactivityTimer();
+      resetInactivityDeadlineRef.current = () => undefined;
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
       const socket = socketRef.current;
       socketRef.current = null;
       socket?.close();
     };
-  }, [finishRequest, revalidateOpaqueFailures, roomCode, sessionToken]);
+  }, [connectionGeneration, finishRequest, revalidateOpaqueFailures, roomCode, sessionToken]);
 
   const send = useCallback((clientMessage: ClientMessage): boolean => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       setMessage("Wait for the arcade to reconnect, then try again.");
       return false;
     }
-    if (clientMessage.type !== "ping" && clientMessage.type !== "room.reconnect") {
-      pendingRequestIdsRef.current.add(clientMessage.requestId);
-      setCommandPending(true);
-      setMessage(null);
-    }
+    pendingRequestIdsRef.current.add(clientMessage.requestId);
+    setCommandPending(true);
+    setMessage(null);
     socketRef.current.send(JSON.stringify(clientMessage));
+    resetInactivityDeadlineRef.current();
     return true;
   }, []);
 
-  return { room, game, status, message, fatalSession, commandPending, send };
+  const reconnect = useCallback(() => {
+    if (!inactiveRef.current) return;
+    inactiveRef.current = false;
+    setMessage(null);
+    setFatalSession(false);
+    setStatus("connecting");
+    setConnectionGeneration((generation) => generation + 1);
+  }, []);
+
+  return { room, game, status, message, fatalSession, commandPending, send, reconnect };
 }
 
 export function isTerminalSessionClose(code: number, reason: string): boolean {
   return (code === 1008 && ["Room unavailable", "Invalid session"].includes(reason))
     || (code === 1001 && reason === "Room expired");
+}
+
+export function isInactivityClose(code: number, reason: string): boolean {
+  return code === PLAYER_INACTIVITY_CLOSE_CODE && reason === PLAYER_INACTIVITY_CLOSE_REASON;
 }

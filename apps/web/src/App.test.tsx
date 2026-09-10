@@ -14,11 +14,12 @@ interface MockRoomSocketState {
     players: Array<{ id: string; isHost: boolean; connected: boolean; displayName: string; score: number }>;
   } | null;
   game: null;
-  status: "connecting" | "connected" | "reconnecting" | "offline" | "error";
+  status: "connecting" | "connected" | "reconnecting" | "offline" | "inactive" | "error";
   message: string | null;
   fatalSession: boolean;
   commandPending: boolean;
   send: ReturnType<typeof vi.fn>;
+  reconnect: ReturnType<typeof vi.fn>;
 }
 
 const roomSocket = vi.hoisted<{ current: MockRoomSocketState }>(() => ({
@@ -29,7 +30,8 @@ const roomSocket = vi.hoisted<{ current: MockRoomSocketState }>(() => ({
     message: null,
     fatalSession: false,
     commandPending: false,
-    send: vi.fn(() => true)
+    send: vi.fn(() => true),
+    reconnect: vi.fn()
   }
 }));
 
@@ -43,7 +45,8 @@ beforeEach(() => {
     message: null,
     fatalSession: false,
     commandPending: false,
-    send: vi.fn(() => true)
+    send: vi.fn(() => true),
+    reconnect: vi.fn()
   };
 });
 
@@ -160,6 +163,24 @@ describe("App entry screen", () => {
     expect(screen.queryByText(/share this link/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Choose a game" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Players" })).not.toBeInTheDocument();
+  });
+
+  it("preserves the saved seat and offers explicit reconnect after inactivity", async () => {
+    const user = userEvent.setup();
+    storeMultiplayerSession();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    roomSocket.current = {
+      ...roomSocket.current,
+      status: "inactive",
+      message: "Disconnected after 15 minutes without player activity. Your seat is still saved."
+    };
+
+    render(<App />);
+
+    expect(await screen.findByText("Disconnected for inactivity.")).toBeInTheDocument();
+    expect(localStorage.getItem(sessionStorageKey("ABCDE"))).toContain("room-token");
+    await user.click(screen.getByRole("button", { name: "Reconnect" }));
+    expect(roomSocket.current.reconnect).toHaveBeenCalledOnce();
   });
 
   it("clears an invalid solo session and returns to a recoverable main page", async () => {

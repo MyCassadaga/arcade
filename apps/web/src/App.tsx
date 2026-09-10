@@ -216,7 +216,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
   onLeave: (nextInviteCode?: string) => void;
 }) {
   const viewportHeight = useViewportHeight();
-  const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(
+  const { room, game, status, message, fatalSession, commandPending, send, reconnect } = useRoomSocket(
     session.roomCode,
     session.sessionToken,
     true
@@ -292,7 +292,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
           <span>TA</span><strong>Team Arcade</strong>
         </a>
         <div className={`connection-badge ${status}`} role="status" aria-live="polite">
-          <i aria-hidden="true" /> {status === "connected" ? "Live" : status === "offline" ? "Offline" : status === "error" ? "Session ended" : status === "connecting" ? "Connecting…" : "Reconnecting…"}
+          <i aria-hidden="true" /> {status === "connected" ? "Live" : status === "offline" ? "Offline" : status === "inactive" ? "Inactive" : status === "error" ? "Session ended" : status === "connecting" ? "Connecting…" : "Reconnecting…"}
         </div>
       </header>
 
@@ -315,8 +315,9 @@ export function Lobby({ session, soloGameId, onLeave }: {
 
       {(status !== "connected" || message) && (!soloGameId || game) && (
         <div className="status-panel" role="alert">
-          <strong>{status === "offline" ? "You’re offline." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
+          <strong>{status === "offline" ? "You’re offline." : status === "inactive" ? "Disconnected for inactivity." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
           <span>{message ?? (status === "offline" ? "We’ll reconnect when your network returns." : "Your seat is saved while we reconnect.")}</span>
+          {status === "inactive" && <button className="text-button" type="button" onClick={reconnect}>Reconnect</button>}
           {fatalSession && !soloGameId && <button className="text-button" type="button" onClick={returnAfterTerminalSession}>Try joining again</button>}
         </div>
       )}
@@ -459,6 +460,8 @@ function SoloLaunchScreen({ gameId, status, message, onCancel, onRetry }: {
   const game = SINGLE_PLAYER_GAME_CATALOG.find((candidate) => candidate.id === gameId);
   const statusCopy = status === "offline"
     ? "You are offline. We will continue when your connection returns."
+    : status === "inactive"
+      ? "Disconnected after 15 minutes without player activity. Reconnect to continue."
     : status === "reconnecting"
       ? "Restoring your puzzle…"
       : status === "error"

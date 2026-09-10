@@ -199,11 +199,88 @@ describe("room Worker and Durable Object", () => {
     const socket = await connect(session);
     await waitForMessage(socket, (message) => message.type === "room.snapshot");
     const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(session.roomCode));
+    await expect(runInDurableObject(stub, (_instance, state) => state.getWebSockets().map((serverSocket) => serverSocket.deserializeAttachment() as { playerId?: string } | null)))
+      .resolves.toContainEqual({ playerId: session.playerId });
     await evictDurableObject(stub);
 
-    socket.send(JSON.stringify({ type: "ping", requestId: "after-wake", payload: { clientTime: 1 } }));
-    await expect(waitForMessage(socket, (message) => message.type === "pong")).resolves.toMatchObject({ type: "pong" });
+    const selection = waitForMessage(socket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "who-said-that");
+    socket.send(JSON.stringify({ type: "host.selectGame", requestId: "after-wake", payload: { gameId: "who-said-that" } }));
+    await expect(selection).resolves.toMatchObject({ type: "room.presence", payload: { selectedGameId: "who-said-that" } });
+
+    const snapshot = waitForMessage(socket, (message) => message.type === "room.snapshot");
+    socket.send(JSON.stringify({ type: "room.reconnect", requestId: "wake-snapshot", payload: { sessionToken: session.sessionToken } }));
+    await expect(snapshot).resolves.toMatchObject({ type: "room.snapshot", payload: { selectedGameId: "who-said-that" } });
     socket.close(1000, "test complete");
+  });
+
+  it("records only meaningful player activity and leaves passive closes and broadcasts unchanged", async () => {
+    const host = await create("Active Host");
+    const guest = await join(host.roomCode, "Quiet Guest");
+    const hostSocket = await connectReady(host);
+    const guestSocket = await connectReady(guest);
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ?", Date.now() - 10_000, host.playerId);
+    });
+    const before = await readPlayerActivity(stub);
+
+    const presence = waitForMessage(guestSocket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "impostor");
+    hostSocket.send(JSON.stringify({ type: "host.selectGame", requestId: "meaningful-activity", payload: { gameId: "impostor" } }));
+    await presence;
+    const afterBroadcast = await readPlayerActivity(stub);
+    expect(afterBroadcast.get(host.playerId)).toBeGreaterThan(before.get(host.playerId) ?? 0);
+    expect(afterBroadcast.get(guest.playerId)).toBe(before.get(guest.playerId));
+
+    const disconnected = waitForMessage(hostSocket, (message) => message.type === "room.presence"
+      && message.payload.players.some((player) => player.id === guest.playerId && !player.connected));
+    guestSocket.close(1000, "passive close");
+    await disconnected;
+    const afterClose = await readPlayerActivity(stub);
+    expect(afterClose.get(guest.playerId)).toBe(before.get(guest.playerId));
+    hostSocket.close(1000, "test complete");
+  });
+
+  it("expires every socket for an idle player, preserves state, transfers host, and restores on reconnect", async () => {
+    const host = await create("Idle Host");
+    const guest = await join(host.roomCode, "Active Guest");
+    const hostSockets = [await connectReady(host), await connectReady(host)];
+    const guestSocket = await connectReady(guest);
+    const selected = waitForMessage(guestSocket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "categories");
+    hostSockets[0]?.send(JSON.stringify({ type: "host.selectGame", requestId: "preserved-selection", payload: { gameId: "categories" } }));
+    await selected;
+
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    const expiredActivityAt = Date.now() - 15 * 60 * 1_000 - 1;
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ?", expiredActivityAt, host.playerId);
+    });
+    const closes = hostSockets.map((socket) => waitForSocketClose(socket));
+    const disconnectedPresence = waitForMessage(guestSocket, (message) => message.type === "room.presence"
+      && message.payload.players.some((player) => player.id === host.playerId && !player.connected));
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await expect(Promise.all(closes)).resolves.toEqual([
+      expect.objectContaining({ code: 4000, reason: "Player inactive" }),
+      expect.objectContaining({ code: 4000, reason: "Player inactive" })
+    ]);
+    await disconnectedPresence;
+    await expect(readPlayerRow(stub, host.playerId)).resolves.toMatchObject({ connected: 0, last_seen_at: expiredActivityAt });
+    await expect(readPlayerRow(stub, guest.playerId)).resolves.toMatchObject({ connected: 1 });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE players SET disconnected_at = ? WHERE id = ?", Date.now() - 60_001, host.playerId);
+    });
+    const transfer = waitForMessage(guestSocket, (message) => message.type === "room.presence"
+      && message.payload.players.some((player) => player.id === guest.playerId && player.isHost));
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await transfer;
+
+    const reconnected = await connect(host);
+    const restored = await waitForMessage(reconnected, (message) => message.type === "room.snapshot");
+    expect(restored).toMatchObject({ type: "room.snapshot", payload: { selectedGameId: "categories" } });
+    if (restored.type !== "room.snapshot") throw new Error("Expected authoritative room snapshot");
+    expect(restored.payload.players.find((player) => player.id === guest.playerId)).toMatchObject({ isHost: true });
+    guestSocket.close(1000, "test complete");
+    reconnected.close(1000, "test complete");
   });
 
   it("transfers a disconnected host after the persisted grace deadline", async () => {
@@ -746,6 +823,24 @@ function validWebp(): Uint8Array {
   bytes.set([10, 0, 0, 0], 34);
   bytes.set([0, 0, 0, 0x9d, 0x01, 0x2a, 0x57, 0x02, 0x1f, 0x03], 38);
   return bytes;
+}
+
+function readPlayerActivity(stub: DurableObjectStub): Promise<Map<string, number>> {
+  return runInDurableObject(stub, (_instance, state) => {
+    const rows = [...state.storage.sql.exec("SELECT id, last_seen_at FROM players")] as unknown as Array<{ id: string; last_seen_at: number }>;
+    return new Map(rows.map((row) => [row.id, row.last_seen_at]));
+  });
+}
+
+function readPlayerRow(stub: DurableObjectStub, playerId: string): Promise<{ connected: number; last_seen_at: number } | undefined> {
+  return runInDurableObject(stub, (_instance, state) => {
+    const rows = [...state.storage.sql.exec("SELECT connected, last_seen_at FROM players WHERE id = ?", playerId)] as unknown as Array<{ connected: number; last_seen_at: number }>;
+    return rows[0];
+  });
+}
+
+function waitForSocketClose(socket: WebSocket): Promise<CloseEvent> {
+  return new Promise((resolve) => socket.addEventListener("close", (event) => resolve(event), { once: true }));
 }
 
 async function setShirtFightDeadline(stub: DurableObjectStub, deadlineAt: number): Promise<void> {

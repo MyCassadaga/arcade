@@ -31,6 +31,8 @@ Owns:
 
 The main page launches catalogued single-player games without room ceremony. For multiplayer rooms, the client stores the opaque session under the room-keyed local-storage key plus one room-code-only resume pointer. Reloading the room URL or returning to the root route validates that saved token before restoring the same seat; explicit Leave or a terminal invalid/expired response clears the token, pointer, and any private local Shirt Fight draft. A recoverable validation failure preserves the saved session and offers retry. For AFTERPRINT, the client creates the existing one-player room internally and stores only a game-to-room-code pointer alongside the established session. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
 
+An open authenticated client sends no periodic heartbeat or state-refresh traffic. A one-shot local deadline is reset only by intentional outbound room/game commands. After 15 minutes without such activity, the socket closes, automatic reconnect remains paused, and the saved session is retained behind an explicit reconnect action.
+
 Does not own:
 - scoring;
 - role assignment;
@@ -129,6 +131,8 @@ Connection metadata required after wake must be stored using Cloudflare-supporte
 
 The code must not depend on a process-global or in-memory Map as the only record of player identity or game state.
 
+Room sockets are accepted with `DurableObjectState.acceptWebSocket`, handled through hibernation event methods, and retain only the player identity in their serialized attachment. Meaningful activity is reconstructed from the durable player row after wake. The shared alarm schedules the earliest meaningful-activity deadline alongside game progression, host failover, room expiry, and asset cleanup; an idle player's sockets are all closed after 15 minutes without deleting the persisted player or game.
+
 Shirt Fight also uses the one Durable Object alarm. Its persisted deadline reconciliation runs before commands, reconnect projections, and alarm work; the scheduler chooses the earliest game deadline, host failover, room expiry, or asset-cleanup retry. Logical expiry denies normal access while retaining a private R2 cleanup tombstone until every recorded object is deleted.
 
 ## Reconnection
@@ -143,7 +147,8 @@ Client reconnection algorithm:
 - server rebinds socket to player identity;
 - server sends complete current player-specific snapshot;
 - client replaces local game state with server snapshot.
-- only the current socket owns status, messages, heartbeat, and retry scheduling; close events from a replaced socket are ignored.
+- an inactivity close pauses automatic retries until the player explicitly reconnects with the same saved session;
+- only the current socket owns status, messages, the one-shot inactivity deadline, and retry scheduling; close events from a replaced socket are ignored.
 - a current unsubmitted Shirt Fight draft is redrawn only after the replacement snapshot confirms its exact slot; submitted, advanced, terminal, or explicitly left sessions retire local draft data without auto-upload.
 
 ## Security boundaries
