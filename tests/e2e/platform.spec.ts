@@ -17,6 +17,41 @@ test("entry and lobby primary actions remain usable on a phone-sized viewport", 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("an idle client stays silent, disconnects at 15 minutes, and explicitly restores authoritative state", async ({ page }) => {
+  await page.clock.install();
+  const sockets: Array<{ url: string; sent: string[] }> = [];
+  page.on("websocket", (socket) => {
+    const observed = { url: socket.url(), sent: [] as string[] };
+    sockets.push(observed);
+    socket.on("framesent", (event) => {
+      if (typeof event.payload === "string") observed.sent.push(event.payload);
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Display name").fill("Idle Host");
+  await page.getByRole("button", { name: "Create game" }).click();
+  await expect(page.locator(".connection-badge")).toHaveText(/Live/u);
+  const roomCode = await page.locator(".room-banner h1").innerText();
+  await expect.poll(() => sockets.length).toBe(1);
+  await expect.poll(() => sockets[0]?.sent.length).toBe(1);
+  expect(JSON.parse(sockets[0]?.sent[0] ?? "{}")).toMatchObject({ type: "room.reconnect" });
+
+  await page.clock.fastForward(15 * 60 * 1_000 - 1);
+  expect(sockets[0]?.sent).toHaveLength(1);
+  await page.clock.fastForward(1);
+  await expect(page.getByText("Disconnected for inactivity.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconnect" })).toBeVisible();
+  expect(sockets[0]?.sent).toHaveLength(1);
+
+  await page.clock.fastForward(60_000);
+  expect(sockets).toHaveLength(1);
+  await page.getByRole("button", { name: "Reconnect" }).click();
+  await expect.poll(() => sockets.length).toBe(2);
+  await expect(page.locator(".connection-badge")).toHaveText(/Live/u);
+  await expect(page.locator(".room-banner h1")).toHaveText(roomCode);
+});
+
 test("two players synchronize a System Crawl move and ability across desktop and phone layouts", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();

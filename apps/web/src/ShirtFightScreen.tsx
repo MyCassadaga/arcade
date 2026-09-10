@@ -20,7 +20,7 @@ import {
 
 type Game = Extract<TypedGameViewerState, { gameId: "shirt-fight" }>;
 
-export function ShirtFightScreen({ game, players, playerId, isHost, roomCode, sessionToken, sendGame, hostAdvance, playAgain, backToArcade }: {
+export function ShirtFightScreen({ game, players, playerId, isHost, roomCode, sessionToken, sendGame, recordActivity, hostAdvance, playAgain, backToArcade }: {
   game: Game;
   players: PlayerView[];
   playerId: string;
@@ -28,6 +28,7 @@ export function ShirtFightScreen({ game, players, playerId, isHost, roomCode, se
   roomCode: string;
   sessionToken: string;
   sendGame: (command: GameCommand) => boolean;
+  recordActivity: () => void;
   hostAdvance: () => boolean;
   playAgain: () => boolean;
   backToArcade: () => boolean;
@@ -58,7 +59,7 @@ export function ShirtFightScreen({ game, players, playerId, isHost, roomCode, se
       ) : game.private.drawingSubmitted ? (
         <PhaseCard title="Drawing locked" kicker={`Drawing ${view.drawingNumber} of 2`}><Progress current={view.completedCount} total={view.totalPlayers} label="drawings in" /><Waiting text="Waiting for the room or the timer…" /></PhaseCard>
       ) : (
-        <DrawingStudio key={`${view.gameInstanceId}-${view.generationRound}-${view.drawingNumber}`} roomCode={roomCode} sessionToken={sessionToken} deadlineAt={view.deadlineAt} draftIdentity={draftIdentity as DrawingDraftIdentity} />
+        <DrawingStudio key={`${view.gameInstanceId}-${view.generationRound}-${view.drawingNumber}`} roomCode={roomCode} sessionToken={sessionToken} deadlineAt={view.deadlineAt} draftIdentity={draftIdentity as DrawingDraftIdentity} recordActivity={recordActivity} />
       ))}
 
       {game.phase === "slogans" && (sharedDisplay ? (
@@ -105,7 +106,7 @@ function PublicProgress({ title, kicker, view }: { title: string; kicker: string
   return <PhaseCard title={title} kicker={kicker}><Progress current={view.completedCount} total={view.totalPlayers} label="players ready" /><p className="shared-instruction">Keep this screen where everyone can see it. Private choices stay on player devices.</p></PhaseCard>;
 }
 
-function DrawingStudio({ roomCode, sessionToken, deadlineAt, draftIdentity }: { roomCode: string; sessionToken: string; deadlineAt: number | undefined; draftIdentity: DrawingDraftIdentity }) {
+function DrawingStudio({ roomCode, sessionToken, deadlineAt, draftIdentity, recordActivity }: { roomCode: string; sessionToken: string; deadlineAt: number | undefined; draftIdentity: DrawingDraftIdentity; recordActivity: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokes = useRef<DrawingStroke[]>([]);
   const currentStroke = useRef<DrawingStroke | null>(null);
@@ -168,13 +169,14 @@ function DrawingStudio({ roomCode, sessionToken, deadlineAt, draftIdentity }: { 
     try {
       const blob = await exportCanvasWebp(canvasRef.current);
       await uploadShirtFightDrawing(roomCode, sessionToken, blob);
+      recordActivity();
       clearDrawingDraft(draftIdentity);
     } catch (caught) {
       submitted.current = false;
       setSaving(false);
       setError(caught instanceof Error ? caught.message : "The drawing could not be saved.");
     }
-  }, [draftIdentity, roomCode, sessionToken]);
+  }, [draftIdentity, recordActivity, roomCode, sessionToken]);
 
   useEffect(() => {
     if (deadlineAt === undefined) return;

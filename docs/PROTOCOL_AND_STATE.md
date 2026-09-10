@@ -13,8 +13,7 @@ type ClientMessage =
   | { type: "host.startGame"; requestId: string; payload: Record<string, never> }
   | { type: "host.advance"; requestId: string; payload: Record<string, never> }
   | { type: "host.backToArcade"; requestId: string; payload: Record<string, never> }
-  | { type: "game.command"; requestId: string; payload: { command: unknown } }
-  | { type: "ping"; requestId: string; payload: { clientTime: number } };
+  | { type: "game.command"; requestId: string; payload: { command: unknown } };
 ```
 
 Room creation/join may use HTTP first and upgrade to WebSocket afterward, or use a WebSocket handshake. Prefer whichever results in cleaner authentication and testing. Do not create two unrelated state models.
@@ -27,9 +26,10 @@ type ServerMessage =
   | { type: "room.presence"; payload: PresenceView }
   | { type: "game.state"; payload: GameViewerState }
   | { type: "command.ack"; requestId: string; payload: { accepted: true } }
-  | { type: "error"; requestId?: string; payload: { code: string; message: string } }
-  | { type: "pong"; payload: { serverTime: number } };
+  | { type: "error"; requestId?: string; payload: { code: string; message: string } };
 ```
+
+The application does not send periodic ping, heartbeat, or state-refresh messages. An authenticated socket remains silent until an intentional player command or a server-pushed state change occurs.
 
 ## Room public view
 

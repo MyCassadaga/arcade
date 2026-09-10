@@ -44,6 +44,9 @@ import {
 import type { Env } from "./types";
 
 const HOST_GRACE_MS = 60_000;
+const PLAYER_INACTIVITY_MS = 15 * 60 * 1_000;
+const PLAYER_INACTIVITY_CLOSE_CODE = 4000;
+const PLAYER_INACTIVITY_CLOSE_REASON = "Player inactive";
 const ROOM_EXPIRY_MS = 12 * 60 * 60 * 1_000;
 const RECENT_REQUEST_LIMIT = 50;
 const MAX_WEBSOCKET_MESSAGE_BYTES = 4_096;
@@ -318,6 +321,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     };
     const result = registerShirtFightDrawing(current.state, drawing, now);
     this.ctx.storage.transactionSync(() => {
+      this.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ?", now, player.id);
       this.writeGame({ gameId: "shirt-fight", state: result.state });
       this.updateAssetEntry(entry.drawingId, (item) => ({ ...item, status: "finalized" }));
     });
@@ -453,14 +457,14 @@ export class RoomDurableObject extends DurableObject<Env> {
 
     const now = Date.now();
     const metadata = this.readMetadata();
+    const player = this.readPlayers().find((candidate) => candidate.id === attachment.playerId);
+    if (!player?.connected) return;
     this.ctx.storage.transactionSync(() => {
       this.sql.exec(
-        "UPDATE players SET connected = 0, disconnected_at = ?, last_seen_at = ? WHERE id = ?",
-        now,
+        "UPDATE players SET connected = 0, disconnected_at = ? WHERE id = ?",
         now,
         attachment.playerId
       );
-      if (metadata) this.writeMetadata({ ...metadata, lastActivityAt: now });
     });
     await this.scheduleAlarm();
     this.broadcast({ type: "room.presence", payload: this.roomView() });
@@ -475,6 +479,9 @@ export class RoomDurableObject extends DurableObject<Env> {
     let metadata = this.readMetadata();
     if (!metadata) return;
     const now = Date.now();
+    this.disconnectInactivePlayers(now);
+    metadata = this.readMetadata();
+    if (!metadata) return;
     if (metadata.expiredAt === undefined && now - metadata.lastActivityAt >= ROOM_EXPIRY_MS) {
       for (const socket of this.ctx.getWebSockets()) socket.close(1001, "Room expired");
       metadata = { ...metadata, expiredAt: now };
@@ -557,19 +564,22 @@ export class RoomDurableObject extends DurableObject<Env> {
   }
 
   private async handleAuthenticatedMessage(socket: WebSocket, playerId: string, message: ClientMessage): Promise<void> {
+    const connectedPlayer = this.readPlayers().find((candidate) => candidate.id === playerId && candidate.connected);
+    if (!connectedPlayer) {
+      if (message.type === "room.reconnect") {
+        await this.authenticateSocket(socket, message);
+        return;
+      }
+      this.sendError(socket, "INVALID_SESSION", "Reconnect before sending commands.", message.requestId);
+      socket.close(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+      return;
+    }
+
     if (message.type === "room.reconnect") {
+      await this.recordPlayerActivity(playerId);
       this.send(socket, { type: "room.snapshot", payload: this.roomView() });
       this.sendGameState(socket, playerId);
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
-      return;
-    }
-    if (message.type === "ping") {
-      const now = Date.now();
-      this.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ?", now, playerId);
-      const metadata = this.readMetadata();
-      if (metadata) this.writeMetadata({ ...metadata, lastActivityAt: now });
-      await this.scheduleAlarm();
-      this.send(socket, { type: "pong", payload: { serverTime: now } });
       return;
     }
 
@@ -577,6 +587,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
       return;
     }
+
+    await this.recordPlayerActivity(playerId);
 
     if (message.type === "game.command") {
       await this.handleGameCommand(socket, playerId, message.requestId, message.payload.command);
@@ -1060,12 +1072,51 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
   }
 
+  private async recordPlayerActivity(playerId: string): Promise<void> {
+    this.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ? AND connected = 1", Date.now(), playerId);
+    await this.scheduleAlarm();
+  }
+
+  private disconnectInactivePlayers(now: number): void {
+    const inactivePlayerIds = new Set(
+      this.readPlayers()
+        .filter((player) => player.connected && now - player.lastSeenAt >= PLAYER_INACTIVITY_MS)
+        .map((player) => player.id)
+    );
+    if (inactivePlayerIds.size === 0) return;
+
+    this.ctx.storage.transactionSync(() => {
+      for (const playerId of inactivePlayerIds) {
+        this.sql.exec(
+          "UPDATE players SET connected = 0, disconnected_at = ? WHERE id = ? AND connected = 1",
+          now,
+          playerId
+        );
+      }
+    });
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+      if (attachment?.playerId && inactivePlayerIds.has(attachment.playerId) && socket.readyState === WebSocket.OPEN) {
+        socket.close(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+      }
+    }
+    this.broadcast({ type: "room.presence", payload: this.roomView() });
+    const roomCode = this.readMetadata()?.roomCode;
+    for (const playerId of inactivePlayerIds) {
+      console.log(JSON.stringify({ event: "player.inactive", roomCode, playerId }));
+    }
+  }
+
   private async scheduleAlarm(): Promise<void> {
     const metadata = this.readMetadata();
     if (!metadata) return;
     let nextAlarm = metadata.expiredAt === undefined ? metadata.lastActivityAt + ROOM_EXPIRY_MS : Number.POSITIVE_INFINITY;
-    const host = this.readPlayers().find((player) => player.isHost);
-    if (host && !host.connected && host.disconnectedAt !== null) {
+    const players = this.readPlayers();
+    for (const player of players) {
+      if (player.connected) nextAlarm = Math.min(nextAlarm, player.lastSeenAt + PLAYER_INACTIVITY_MS);
+    }
+    const host = players.find((player) => player.isHost);
+    if (host && !host.connected && host.disconnectedAt !== null && chooseHostSuccessor(players)) {
       nextAlarm = Math.min(nextAlarm, host.disconnectedAt + HOST_GRACE_MS);
     }
     const game = this.readGame();

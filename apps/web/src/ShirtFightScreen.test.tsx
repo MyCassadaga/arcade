@@ -1,9 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlayerView, TypedGameViewerState } from "@team-arcade/shared";
 import { ShirtFightScreen } from "./ShirtFightScreen";
 import { drawingDraftStorageKey, writeDrawingDraft } from "./shirt-fight-draft";
+
+vi.mock("./shirt-fight-export", () => ({
+  exportCanvasWebp: vi.fn(() => Promise.resolve(new Blob(["drawing"], { type: "image/webp" })))
+}));
 
 const players: PlayerView[] = [
   { id: "p1", displayName: "Ada", connected: true, isHost: true, score: 0 },
@@ -22,13 +26,13 @@ function game(overrides: Partial<Extract<TypedGameViewerState, { gameId: "shirt-
   };
 }
 
-function renderGame(value: ReturnType<typeof game>, sendGame = vi.fn(() => true)) {
-  render(shirtFightElement(value, sendGame));
+function renderGame(value: ReturnType<typeof game>, sendGame = vi.fn(() => true), recordActivity = vi.fn()) {
+  render(shirtFightElement(value, sendGame, recordActivity));
   return sendGame;
 }
 
-function shirtFightElement(value: ReturnType<typeof game>, sendGame = vi.fn(() => true)) {
-  return <ShirtFightScreen game={value} players={players} playerId="p1" isHost roomCode="ABCDE" sessionToken={"s".repeat(43)} sendGame={sendGame} hostAdvance={() => true} playAgain={() => true} backToArcade={() => true} />;
+function shirtFightElement(value: ReturnType<typeof game>, sendGame = vi.fn(() => true), recordActivity = vi.fn()) {
+  return <ShirtFightScreen game={value} players={players} playerId="p1" isHost roomCode="ABCDE" sessionToken={"s".repeat(43)} sendGame={sendGame} recordActivity={recordActivity} hostAdvance={() => true} playAgain={() => true} backToArcade={() => true} />;
 }
 
 beforeEach(() => {
@@ -64,6 +68,19 @@ describe("Shirt Fight mobile presentation", () => {
 
     expect(sessionStorage.getItem(drawingDraftStorageKey(identity))).toBeNull();
     expect(screen.getByRole("heading", { name: "Drawing locked" })).toBeInTheDocument();
+  });
+
+  it("refreshes client activity only after a drawing upload succeeds", async () => {
+    const recordActivity = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ drawingId: "00000000-0000-4000-8000-000000000101" })
+    }));
+    renderGame(game(), vi.fn(() => true), recordActivity);
+
+    await userEvent.click(screen.getByRole("button", { name: "Lock drawing" }));
+
+    await waitFor(() => expect(recordActivity).toHaveBeenCalledOnce());
   });
 
   it("retires an offline private draft after the authoritative phase advances", () => {

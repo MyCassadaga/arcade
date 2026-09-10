@@ -216,7 +216,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
   onLeave: (nextInviteCode?: string) => void;
 }) {
   const viewportHeight = useViewportHeight();
-  const { room, game, status, message, fatalSession, commandPending, send } = useRoomSocket(
+  const { room, game, status, message, fatalSession, commandPending, send, recordActivity, reconnect } = useRoomSocket(
     session.roomCode,
     session.sessionToken,
     true
@@ -292,7 +292,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
           <span>TA</span><strong>Team Arcade</strong>
         </a>
         <div className={`connection-badge ${status}`} role="status" aria-live="polite">
-          <i aria-hidden="true" /> {status === "connected" ? "Live" : status === "offline" ? "Offline" : status === "error" ? "Session ended" : status === "connecting" ? "Connecting…" : "Reconnecting…"}
+          <i aria-hidden="true" /> {status === "connected" ? "Live" : status === "offline" ? "Offline" : status === "inactive" ? "Inactive" : status === "error" ? "Session ended" : status === "connecting" ? "Connecting…" : "Reconnecting…"}
         </div>
       </header>
 
@@ -315,14 +315,15 @@ export function Lobby({ session, soloGameId, onLeave }: {
 
       {(status !== "connected" || message) && (!soloGameId || game) && (
         <div className="status-panel" role="alert">
-          <strong>{status === "offline" ? "You’re offline." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
+          <strong>{status === "offline" ? "You’re offline." : status === "inactive" ? "Disconnected for inactivity." : status === "error" ? "This session ended." : status !== "connected" ? "Finding your room…" : "Heads up"}</strong>
           <span>{message ?? (status === "offline" ? "We’ll reconnect when your network returns." : "Your seat is saved while we reconnect.")}</span>
+          {status === "inactive" && <button className="text-button" type="button" onClick={reconnect}>Reconnect</button>}
           {fatalSession && !soloGameId && <button className="text-button" type="button" onClick={returnAfterTerminalSession}>Try joining again</button>}
         </div>
       )}
 
       <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""}`}>
-        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} roomCode={session.roomCode} sessionToken={session.sessionToken} status={status} commandPending={commandPending} send={send} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
+        {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} roomCode={session.roomCode} sessionToken={session.sessionToken} status={status} commandPending={commandPending} send={send} recordActivity={recordActivity} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
             {!self?.isHost && <span className="host-note">{host?.connected === false ? "Host disconnected — holding their seat" : `${host?.displayName ?? "The host"} is choosing`}</span>}
@@ -459,6 +460,8 @@ function SoloLaunchScreen({ gameId, status, message, onCancel, onRetry }: {
   const game = SINGLE_PLAYER_GAME_CATALOG.find((candidate) => candidate.id === gameId);
   const statusCopy = status === "offline"
     ? "You are offline. We will continue when your connection returns."
+    : status === "inactive"
+      ? "Disconnected after 15 minutes without player activity. Reconnect to continue."
     : status === "reconnecting"
       ? "Restoring your puzzle…"
       : status === "error"

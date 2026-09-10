@@ -23,6 +23,7 @@ describe("shared protocol validation", () => {
   it("rejects unknown and malformed WebSocket commands", () => {
     expect(clientMessageSchema.safeParse({ type: "host.selectGame", requestId: "1", payload: { gameId: "impostor" } }).success).toBe(true);
     expect(clientMessageSchema.safeParse({ type: "host.selectGame", requestId: "1", payload: { gameId: "unknown" } }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ type: "ping", requestId: "1", payload: { clientTime: 1 } }).success).toBe(false);
     expect(clientMessageSchema.safeParse({ type: "admin.win", requestId: "1", payload: {} }).success).toBe(false);
   });
 
