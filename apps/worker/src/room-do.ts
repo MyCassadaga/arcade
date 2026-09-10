@@ -14,6 +14,7 @@ import {
   type SystemCrawlState
 } from "@team-arcade/games";
 import { GAME_REGISTRY, bindGame, isRegisteredGame, type StoredPartyGame } from "./game-registry";
+import { readThenRevalidate } from "./post-io-authorization";
 import {
   MAX_PLAYERS,
   clientMessageSchema,
@@ -338,12 +339,29 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
     const entry = this.readAssetManifest().entries.find((item) => item.drawingId === drawingId && item.status === "finalized" && item.gameInstanceId === game.state.gameInstanceId);
     if (!entry) return jsonError("INVALID_COMMAND", "That drawing is not available to you.", 404);
-    const object = await this.env.SHIRT_FIGHT_DRAWINGS.get(entry.objectKey);
-    if (!object) return jsonError("SERVER_ERROR", "That drawing is temporarily unavailable.", 503);
-    return new Response(object.body, {
+    const authorizedRead = await readThenRevalidate(
+      () => this.env.SHIRT_FIGHT_DRAWINGS.get(entry.objectKey),
+      async () => {
+        const currentMetadata = await this.activeMetadata();
+        if (currentMetadata instanceof Response) return currentMetadata;
+        const currentGame = this.readGame();
+        if (currentGame?.gameId !== "shirt-fight") return false;
+        const currentEntry = this.readAssetManifest().entries.find((item) => item.drawingId === drawingId
+          && item.objectKey === entry.objectKey
+          && item.status === "finalized"
+          && item.gameInstanceId === currentGame.state.gameInstanceId);
+        return currentEntry !== undefined && canViewerAccessShirtFightDrawing(currentGame.state, player.id, drawingId);
+      }
+    );
+    if (authorizedRead.object === null) return jsonError("SERVER_ERROR", "That drawing is temporarily unavailable.", 503);
+    if (authorizedRead.authorization instanceof Response) return authorizedRead.authorization;
+    if (!authorizedRead.authorization) {
+      return jsonError("INVALID_COMMAND", "That drawing is not available to you.", 404);
+    }
+    return new Response(authorizedRead.object.body, {
       headers: {
-        "Content-Type": object.httpMetadata?.contentType ?? "image/webp",
-        "Content-Length": String(object.size),
+        "Content-Type": authorizedRead.object.httpMetadata?.contentType ?? "image/webp",
+        "Content-Length": String(authorizedRead.object.size),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff"
       }
