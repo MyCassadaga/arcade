@@ -1105,7 +1105,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       if (player.connected) nextAlarm = Math.min(nextAlarm, player.lastSeenAt + PLAYER_INACTIVITY_MS);
     }
     const host = players.find((player) => player.isHost);
-    if (host && !host.connected && host.disconnectedAt !== null) {
+    if (host && !host.connected && host.disconnectedAt !== null && chooseHostSuccessor(players)) {
       nextAlarm = Math.min(nextAlarm, host.disconnectedAt + HOST_GRACE_MS);
     }
     const game = this.readGame();

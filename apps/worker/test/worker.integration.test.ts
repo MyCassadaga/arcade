@@ -283,6 +283,26 @@ describe("room Worker and Durable Object", () => {
     reconnected.close(1000, "test complete");
   });
 
+  it("does not reschedule an expired host-grace alarm when no connected successor exists", async () => {
+    const host = await create("Only Host");
+    const socket = await connectReady(host);
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE players SET last_seen_at = ? WHERE id = ?", Date.now() - 15 * 60 * 1_000 - 1, host.playerId);
+    });
+    const closed = waitForSocketClose(socket);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await expect(closed).resolves.toMatchObject({ code: 4000, reason: "Player inactive" });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE players SET disconnected_at = ? WHERE id = ?", Date.now() - 60_001, host.playerId);
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const nextAlarm = await runInDurableObject(stub, (_instance, state) => state.storage.getAlarm());
+    expect(nextAlarm).not.toBeNull();
+    expect(nextAlarm as number).toBeGreaterThan(Date.now());
+  });
+
   it("transfers a disconnected host after the persisted grace deadline", async () => {
     const host = await create("Original Host");
     const guest = await join(host.roomCode, "Next Host");
