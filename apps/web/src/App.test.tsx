@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStorageKey } from "@team-arcade/shared";
 import { App } from "./App";
 import { soloRoomPointerStorageKey } from "./solo-launch";
+import { multiplayerRoomPointerStorageKey } from "./room-resume";
+import { drawingDraftStorageKey } from "./shirt-fight-draft";
 
 interface MockRoomSocketState {
   room: {
@@ -67,6 +69,56 @@ describe("App entry screen", () => {
     window.history.replaceState(null, "", "/?room=abcde");
     render(<App />);
     expect(screen.getByLabelText("Room code")).toHaveValue("ABCDE");
+  });
+
+  it("stores a room-code-only resume pointer after joining multiplayer", async () => {
+    const user = userEvent.setup();
+    const session = { roomCode: "ABCDE", playerId: "player-one", sessionToken: "room-token" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) }));
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Join room" }));
+    await user.type(screen.getByLabelText("Display name"), "Ada");
+    await user.type(screen.getByLabelText("Room code"), "ABCDE");
+    await user.click(screen.getByRole("button", { name: "Join the fun" }));
+
+    await waitFor(() => expect(localStorage.getItem(multiplayerRoomPointerStorageKey)).toBe("ABCDE"));
+    expect(localStorage.getItem(sessionStorageKey("ABCDE"))).toContain("room-token");
+    expect(window.location.search).toBe("?room=ABCDE");
+  });
+
+  it("validates and restores a multiplayer seat from the root route without creating a duplicate", async () => {
+    const session = storeMultiplayerSession();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/rooms/ABCDE/session", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ sessionToken: session.sessionToken })
+    })));
+    expect(window.location.search).toBe("?room=ABCDE");
+    expect(screen.getByText("Room code")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Join the fun" })).not.toBeInTheDocument();
+  });
+
+  it("retires the token, pointer, and private draft when a saved seat is terminal", async () => {
+    const session = storeMultiplayerSession();
+    const draftKey = drawingDraftStorageKey({ roomCode: "ABCDE", playerId: session.playerId, gameInstanceId: "game", generationRound: 1, drawingNumber: 1 });
+    sessionStorage.setItem(draftKey, "private-draft");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: { code: "INVALID_SESSION", message: "Your room session is no longer valid." } })
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText(/saved seat is no longer available/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Room code")).toHaveValue("ABCDE");
+    expect(localStorage.getItem(multiplayerRoomPointerStorageKey)).toBeNull();
+    expect(localStorage.getItem(sessionStorageKey("ABCDE"))).toBeNull();
+    expect(sessionStorage.getItem(draftKey)).toBeNull();
   });
 
   it("launches AFTERPRINT without asking for room details or exposing multiplayer chrome", async () => {
@@ -190,4 +242,12 @@ function storeSoloSession() {
   localStorage.setItem(sessionStorageKey(session.roomCode), JSON.stringify(session));
   window.history.replaceState(null, "", "/?play=afterprint");
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+}
+
+function storeMultiplayerSession() {
+  const session = { roomCode: "ABCDE", playerId: "player-one", sessionToken: "room-token" };
+  localStorage.setItem(multiplayerRoomPointerStorageKey, session.roomCode);
+  localStorage.setItem(sessionStorageKey(session.roomCode), JSON.stringify(session));
+  window.history.replaceState(null, "", "/");
+  return session;
 }

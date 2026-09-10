@@ -1,13 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SHIRT_FIGHT_BRUSH_SIZES, SHIRT_FIGHT_COLORS, type GameCommand, type PlayerView, type TypedGameViewerState } from "@team-arcade/shared";
 import { fetchShirtFightDrawing, uploadShirtFightDrawing } from "./api";
 import { PhaseCard, PrimaryAction, Progress, Waiting, playerName } from "./game-presentation";
+import { exportCanvasWebp } from "./shirt-fight-export";
+import {
+  SHIRT_FIGHT_CANVAS_HEIGHT,
+  SHIRT_FIGHT_CANVAS_WIDTH,
+  MAX_DRAWING_POINTS_PER_STROKE,
+  MAX_DRAWING_STROKES,
+  MAX_DRAWING_TOTAL_POINTS,
+  clearDrawingDraft,
+  clearPlayerDrawingDrafts,
+  readDrawingDraft,
+  writeDrawingDraft,
+  type DrawingDraftIdentity,
+  type DrawingPoint,
+  type DrawingStroke
+} from "./shirt-fight-draft";
 
 type Game = Extract<TypedGameViewerState, { gameId: "shirt-fight" }>;
 
-export function ShirtFightScreen({ game, players, isHost, roomCode, sessionToken, sendGame, hostAdvance, playAgain, backToArcade }: {
+export function ShirtFightScreen({ game, players, playerId, isHost, roomCode, sessionToken, sendGame, hostAdvance, playAgain, backToArcade }: {
   game: Game;
   players: PlayerView[];
+  playerId: string;
   isHost: boolean;
   roomCode: string;
   sessionToken: string;
@@ -21,9 +37,16 @@ export function ShirtFightScreen({ game, players, isHost, roomCode, sessionToken
   const remaining = useCountdown(view.deadlineAt);
   const identity = { gameInstanceId: view.gameInstanceId, phaseNonce: view.phaseNonce };
   const phaseLabel = game.phase === "finalVoting" || game.phase === "finalReveal" || game.phase === "gameResults" ? "Finals" : `Round ${view.generationRound} of 2`;
+  const draftIdentity = useMemo(() => game.phase === "drawing" && view.drawingNumber !== undefined && !game.private.drawingSubmitted
+    ? { roomCode, playerId, gameInstanceId: view.gameInstanceId, generationRound: view.generationRound, drawingNumber: view.drawingNumber }
+    : null, [game.phase, game.private.drawingSubmitted, playerId, roomCode, view.drawingNumber, view.gameInstanceId, view.generationRound]);
+
+  useEffect(() => {
+    clearPlayerDrawingDrafts(roomCode, playerId, draftIdentity ?? undefined);
+  }, [draftIdentity, playerId, roomCode]);
 
   return (
-    <div className={`shirt-fight-screen ${sharedDisplay ? "shared-display" : ""}`}>
+    <div className={`shirt-fight-screen ${game.phase === "drawing" && !sharedDisplay ? "drawing-phase" : ""} ${sharedDisplay ? "shared-display" : ""}`}>
       <div className="phase-topline shirt-fight-topline">
         <span>Shirt Fight</span><span>{phaseLabel}</span>
         {view.deadlineAt !== undefined && <strong className="shirt-timer" role="timer" aria-label={`${remaining} seconds remaining`}>{remaining}s</strong>}
@@ -35,7 +58,7 @@ export function ShirtFightScreen({ game, players, isHost, roomCode, sessionToken
       ) : game.private.drawingSubmitted ? (
         <PhaseCard title="Drawing locked" kicker={`Drawing ${view.drawingNumber} of 2`}><Progress current={view.completedCount} total={view.totalPlayers} label="drawings in" /><Waiting text="Waiting for the room or the timer…" /></PhaseCard>
       ) : (
-        <DrawingStudio key={`${view.generationRound}-${view.drawingNumber}`} roomCode={roomCode} sessionToken={sessionToken} deadlineAt={view.deadlineAt} />
+        <DrawingStudio key={`${view.gameInstanceId}-${view.generationRound}-${view.drawingNumber}`} roomCode={roomCode} sessionToken={sessionToken} deadlineAt={view.deadlineAt} draftIdentity={draftIdentity as DrawingDraftIdentity} />
       ))}
 
       {game.phase === "slogans" && (sharedDisplay ? (
@@ -82,9 +105,10 @@ function PublicProgress({ title, kicker, view }: { title: string; kicker: string
   return <PhaseCard title={title} kicker={kicker}><Progress current={view.completedCount} total={view.totalPlayers} label="players ready" /><p className="shared-instruction">Keep this screen where everyone can see it. Private choices stay on player devices.</p></PhaseCard>;
 }
 
-function DrawingStudio({ roomCode, sessionToken, deadlineAt }: { roomCode: string; sessionToken: string; deadlineAt: number | undefined }) {
+function DrawingStudio({ roomCode, sessionToken, deadlineAt, draftIdentity }: { roomCode: string; sessionToken: string; deadlineAt: number | undefined; draftIdentity: DrawingDraftIdentity }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const history = useRef<ImageData[]>([]);
+  const strokes = useRef<DrawingStroke[]>([]);
+  const currentStroke = useRef<DrawingStroke | null>(null);
   const active = useRef(false);
   const submitted = useRef(false);
   const [color, setColor] = useState<(typeof SHIRT_FIGHT_COLORS)[number]>("black");
@@ -96,44 +120,61 @@ function DrawingStudio({ roomCode, sessionToken, deadlineAt }: { roomCode: strin
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d", { willReadFrequently: true });
     if (!canvas || !context) return;
-    context.fillStyle = "white";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-  }, []);
+    strokes.current = readDrawingDraft(draftIdentity);
+    redraw(context, strokes.current);
+  }, [draftIdentity]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
     const rect = canvas.getBoundingClientRect();
-    return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height };
+    return boundedPoint((event.clientX - rect.left) * canvas.width / rect.width, (event.clientY - rect.top) * canvas.height / rect.height);
   };
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget, context = canvas.getContext("2d", { willReadFrequently: true });
     if (!context) return;
-    history.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    if (history.current.length > 20) history.current.shift();
-    const { x, y } = point(event);
-    context.beginPath(); context.moveTo(x, y); context.lineCap = "round"; context.lineJoin = "round";
-    context.strokeStyle = color; context.lineWidth = size === "small" ? 5 : size === "medium" ? 12 : 28;
+    const first = point(event);
+    currentStroke.current = { color, size, points: [first] };
+    beginStroke(context, currentStroke.current);
     active.current = true; canvas.setPointerCapture(event.pointerId); event.preventDefault();
   };
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!active.current) return;
     const context = event.currentTarget.getContext("2d"); if (!context) return;
-    const { x, y } = point(event); context.lineTo(x, y); context.stroke(); event.preventDefault();
+    const stroke = currentStroke.current;
+    if (!stroke) return;
+    const next = point(event);
+    if (stroke.points.length < MAX_DRAWING_POINTS_PER_STROKE) stroke.points.push(next);
+    else stroke.points[stroke.points.length - 1] = next;
+    context.lineTo(next.x, next.y); context.stroke(); event.preventDefault();
   };
-  const finish = (event: React.PointerEvent<HTMLCanvasElement>) => { active.current = false; event.currentTarget.releasePointerCapture(event.pointerId); event.preventDefault(); };
+  const finish = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!active.current) return;
+    active.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const stroke = currentStroke.current;
+    currentStroke.current = null;
+    if (stroke) {
+      if (stroke.points.length === 1) drawDot(event.currentTarget.getContext("2d"), stroke);
+      strokes.current.push(stroke);
+      while (strokes.current.length > MAX_DRAWING_STROKES || drawingPointCount(strokes.current) > MAX_DRAWING_TOTAL_POINTS) strokes.current.shift();
+      writeDrawingDraft(draftIdentity, strokes.current);
+    }
+    event.preventDefault();
+  };
 
   const submit = useCallback(async () => {
     if (submitted.current || !canvasRef.current) return;
     submitted.current = true; setSaving(true); setError(null);
     try {
-      const blob = await new Promise<Blob>((resolve, reject) => canvasRef.current?.toBlob((value) => value ? resolve(value) : reject(new Error("WebP unavailable")), "image/webp", 0.78));
+      const blob = await exportCanvasWebp(canvasRef.current);
       await uploadShirtFightDrawing(roomCode, sessionToken, blob);
+      clearDrawingDraft(draftIdentity);
     } catch (caught) {
       submitted.current = false;
       setSaving(false);
       setError(caught instanceof Error ? caught.message : "The drawing could not be saved.");
     }
-  }, [roomCode, sessionToken]);
+  }, [draftIdentity, roomCode, sessionToken]);
 
   useEffect(() => {
     if (deadlineAt === undefined) return;
@@ -141,8 +182,19 @@ function DrawingStudio({ roomCode, sessionToken, deadlineAt }: { roomCode: strin
     return () => window.clearTimeout(timer);
   }, [deadlineAt, submit]);
 
-  const undo = () => { const previous = history.current.pop(), context = canvasRef.current?.getContext("2d"); if (previous && context) context.putImageData(previous, 0, 0); };
-  const clear = () => { const canvas = canvasRef.current, context = canvas?.getContext("2d", { willReadFrequently: true }); if (!canvas || !context) return; history.current.push(context.getImageData(0, 0, canvas.width, canvas.height)); context.fillStyle = "white"; context.fillRect(0, 0, canvas.width, canvas.height); };
+  const undo = () => {
+    const context = canvasRef.current?.getContext("2d", { willReadFrequently: true });
+    if (!context || !strokes.current.pop()) return;
+    redraw(context, strokes.current);
+    writeDrawingDraft(draftIdentity, strokes.current);
+  };
+  const clear = () => {
+    const context = canvasRef.current?.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    strokes.current = [];
+    redraw(context, strokes.current);
+    clearDrawingDraft(draftIdentity);
+  };
 
   return <PhaseCard title="Draw something unforgettable" kicker="Portrait canvas · keep it bold">
     <div className="drawing-tools" aria-label="Drawing tools">
@@ -150,10 +202,59 @@ function DrawingStudio({ roomCode, sessionToken, deadlineAt }: { roomCode: strin
       <div className="brush-tools" role="group" aria-label="Brush size">{SHIRT_FIGHT_BRUSH_SIZES.map((value) => <button type="button" key={value} className={size === value ? "selected" : ""} aria-pressed={size === value} onClick={() => setSize(value)}>{value}</button>)}</div>
       <div className="edit-tools"><button type="button" onClick={undo}>Undo</button><button type="button" onClick={clear}>Clear</button></div>
     </div>
-    <canvas ref={canvasRef} className="drawing-canvas" width={600} height={800} aria-label="Shirt drawing canvas" onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} />
+    <canvas ref={canvasRef} className="drawing-canvas" width={SHIRT_FIGHT_CANVAS_WIDTH} height={SHIRT_FIGHT_CANVAS_HEIGHT} aria-label="Shirt drawing canvas" onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} />
     {error && <p className="form-error" role="alert">{error}</p>}
     <button className="primary-button" type="button" disabled={saving} onClick={() => { void submit(); }}>{saving ? "Saving drawing…" : "Lock drawing"}</button>
   </PhaseCard>;
+}
+
+function boundedPoint(x: number, y: number): DrawingPoint {
+  return {
+    x: Math.round(Math.max(0, Math.min(SHIRT_FIGHT_CANVAS_WIDTH, x)) * 10) / 10,
+    y: Math.round(Math.max(0, Math.min(SHIRT_FIGHT_CANVAS_HEIGHT, y)) * 10) / 10
+  };
+}
+
+function lineWidth(size: DrawingStroke["size"]): number {
+  return size === "small" ? 5 : size === "medium" ? 12 : 28;
+}
+
+function beginStroke(context: CanvasRenderingContext2D, stroke: DrawingStroke): void {
+  const first = stroke.points[0];
+  if (!first) return;
+  context.beginPath();
+  context.moveTo(first.x, first.y);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = stroke.color;
+  context.lineWidth = lineWidth(stroke.size);
+}
+
+function drawDot(context: CanvasRenderingContext2D | null, stroke: DrawingStroke): void {
+  const first = stroke.points[0];
+  if (!context || !first) return;
+  context.beginPath();
+  context.arc(first.x, first.y, lineWidth(stroke.size) / 2, 0, Math.PI * 2);
+  context.fillStyle = stroke.color;
+  context.fill();
+}
+
+function redraw(context: CanvasRenderingContext2D, strokes: DrawingStroke[]): void {
+  context.fillStyle = "white";
+  context.fillRect(0, 0, SHIRT_FIGHT_CANVAS_WIDTH, SHIRT_FIGHT_CANVAS_HEIGHT);
+  for (const stroke of strokes) {
+    if (stroke.points.length === 1) {
+      drawDot(context, stroke);
+      continue;
+    }
+    beginStroke(context, stroke);
+    for (const point of stroke.points.slice(1)) context.lineTo(point.x, point.y);
+    context.stroke();
+  }
+}
+
+function drawingPointCount(strokes: DrawingStroke[]): number {
+  return strokes.reduce((total, stroke) => total + stroke.points.length, 0);
 }
 
 function SloganStudio({ game, sendGame, identity }: { game: Game; sendGame: (command: GameCommand) => boolean; identity: { gameInstanceId: string; phaseNonce: number } }) {

@@ -17,5 +17,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }]
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    { name: "firefox-shirt-fight", testMatch: /shirt-fight-compat\.spec\.ts/, use: { browserName: "firefox" } },
+    { name: "webkit-shirt-fight", testMatch: /shirt-fight-compat\.spec\.ts/, use: { browserName: "webkit" } }
+  ]
 });

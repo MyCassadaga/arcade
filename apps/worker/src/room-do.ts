@@ -256,11 +256,11 @@ export class RoomDurableObject extends DurableObject<Env> {
 
   private async receiveShirtFightDrawing(request: Request): Promise<Response> {
     const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-    if (contentType !== "image/webp") return jsonError("INVALID_COMMAND", "Drawings must be WebP images.", 415);
+    if (contentType !== "image/webp") return jsonError("INVALID_COMMAND", "This browser produced an unsupported drawing. Refresh and try again.", 415);
     const declaredLength = Number(request.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "Drawing image is too large.", 413);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_DRAWING_BYTES) return jsonError("INVALID_COMMAND", "This drawing has too much detail to save. Undo a few strokes and try again.", 413);
     const bytes = await readBoundedBytes(request, MAX_DRAWING_BYTES);
-    if (!bytes) return jsonError("INVALID_COMMAND", "Drawing image is invalid or too large.", 413);
+    if (!bytes) return jsonError("INVALID_COMMAND", "The drawing upload was incomplete or too large. Try locking it again.", 413);
     return this.ctx.blockConcurrencyWhile(() => this.uploadShirtFightDrawing(request, bytes));
   }
 
@@ -279,9 +279,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       return jsonError("ALREADY_SUBMITTED", "That drawing is already finalized.", 409);
     }
     const dimensions = readWebpDimensions(bytes);
-    if (!dimensions || dimensions.width !== 600 || dimensions.height !== 800) {
-      return jsonError("INVALID_COMMAND", "Drawings must be a 600 by 800 WebP image.", 400);
-    }
+    if (!dimensions) return jsonError("INVALID_COMMAND", "The drawing was damaged before it arrived. Try locking it again.", 400);
+    if (dimensions.width !== 600 || dimensions.height !== 800) return jsonError("INVALID_COMMAND", "The drawing arrived at the wrong size. Refresh the game and try again.", 400);
 
     const slot = {
       gameInstanceId: game.state.gameInstanceId,

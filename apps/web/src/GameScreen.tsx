@@ -69,7 +69,7 @@ export function GameScreen({ game, room, selfId, roomCode, sessionToken, status,
 
   if (game.gameId === "shirt-fight") {
     return <section className="game-stage shirt-fight"><ShirtFightScreen game={game} players={room.players}
-      isHost={self?.isHost === true} roomCode={roomCode} sessionToken={sessionToken} sendGame={sendGame}
+      playerId={selfId} isHost={self?.isHost === true} roomCode={roomCode} sessionToken={sessionToken} sendGame={sendGame}
       hostAdvance={hostAdvance} playAgain={playAgain} backToArcade={backToArcade} /></section>;
   }
 
