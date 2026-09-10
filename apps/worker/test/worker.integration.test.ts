@@ -283,6 +283,59 @@ describe("room Worker and Durable Object", () => {
     reconnected.close(1000, "test complete");
   });
 
+  it("rejects a command queued after the player is durably marked inactive", async () => {
+    const host = await create("Queued Host");
+    const socket = await connectReady(host);
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE players SET connected = 0, disconnected_at = ? WHERE id = ?",
+        Date.now(),
+        host.playerId
+      );
+    });
+
+    const rejected = waitForMessage(socket, (message) => message.type === "error" && message.requestId === "queued-after-expiry");
+    const closed = waitForSocketClose(socket);
+    socket.send(JSON.stringify({
+      type: "host.selectGame",
+      requestId: "queued-after-expiry",
+      payload: { gameId: "categories" }
+    }));
+
+    await expect(rejected).resolves.toMatchObject({ type: "error", payload: { code: "INVALID_SESSION" } });
+    await expect(closed).resolves.toMatchObject({ code: 4000, reason: "Player inactive" });
+    const selectedGameId = await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'metadata'")] as unknown as Array<{ json_value: string }>;
+      return (JSON.parse(rows[0]?.json_value ?? "{}") as { selectedGameId?: string | null }).selectedGameId;
+    });
+    expect(selectedGameId).toBeNull();
+  });
+
+  it("reauthenticates an attached inactive socket before restoring authoritative state", async () => {
+    const host = await create("Attached Rejoin");
+    const socket = await connectReady(host);
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE players SET connected = 0, disconnected_at = ? WHERE id = ?",
+        Date.now(),
+        host.playerId
+      );
+    });
+
+    const snapshot = waitForMessage(socket, (message) => message.type === "room.snapshot");
+    socket.send(JSON.stringify({
+      type: "room.reconnect",
+      requestId: "attached-reauthenticate",
+      payload: { sessionToken: host.sessionToken }
+    }));
+
+    await expect(snapshot).resolves.toMatchObject({ type: "room.snapshot", payload: { roomCode: host.roomCode } });
+    await expect(readPlayerRow(stub, host.playerId)).resolves.toMatchObject({ connected: 1 });
+    socket.close(1000, "test complete");
+  });
+
   it("does not reschedule an expired host-grace alarm when no connected successor exists", async () => {
     const host = await create("Only Host");
     const socket = await connectReady(host);

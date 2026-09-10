@@ -564,6 +564,17 @@ export class RoomDurableObject extends DurableObject<Env> {
   }
 
   private async handleAuthenticatedMessage(socket: WebSocket, playerId: string, message: ClientMessage): Promise<void> {
+    const connectedPlayer = this.readPlayers().find((candidate) => candidate.id === playerId && candidate.connected);
+    if (!connectedPlayer) {
+      if (message.type === "room.reconnect") {
+        await this.authenticateSocket(socket, message);
+        return;
+      }
+      this.sendError(socket, "INVALID_SESSION", "Reconnect before sending commands.", message.requestId);
+      socket.close(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+      return;
+    }
+
     if (message.type === "room.reconnect") {
       await this.recordPlayerActivity(playerId);
       this.send(socket, { type: "room.snapshot", payload: this.roomView() });

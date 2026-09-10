@@ -16,6 +16,7 @@ interface RoomSocketState {
   fatalSession: boolean;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
+  recordActivity: () => void;
   reconnect: () => void;
 }
 
@@ -223,6 +224,10 @@ export function useRoomSocket(
     return true;
   }, []);
 
+  const recordActivity = useCallback(() => {
+    resetInactivityDeadlineRef.current();
+  }, []);
+
   const reconnect = useCallback(() => {
     if (!inactiveRef.current) return;
     inactiveRef.current = false;
@@ -232,7 +237,7 @@ export function useRoomSocket(
     setConnectionGeneration((generation) => generation + 1);
   }, []);
 
-  return { room, game, status, message, fatalSession, commandPending, send, reconnect };
+  return { room, game, status, message, fatalSession, commandPending, send, recordActivity, reconnect };
 }
 
 export function isTerminalSessionClose(code: number, reason: string): boolean {

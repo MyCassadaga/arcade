@@ -19,6 +19,7 @@ interface MockRoomSocketState {
   fatalSession: boolean;
   commandPending: boolean;
   send: ReturnType<typeof vi.fn>;
+  recordActivity: ReturnType<typeof vi.fn>;
   reconnect: ReturnType<typeof vi.fn>;
 }
 
@@ -31,6 +32,7 @@ const roomSocket = vi.hoisted<{ current: MockRoomSocketState }>(() => ({
     fatalSession: false,
     commandPending: false,
     send: vi.fn(() => true),
+    recordActivity: vi.fn(),
     reconnect: vi.fn()
   }
 }));
@@ -46,6 +48,7 @@ beforeEach(() => {
     fatalSession: false,
     commandPending: false,
     send: vi.fn(() => true),
+    recordActivity: vi.fn(),
     reconnect: vi.fn()
   };
 });

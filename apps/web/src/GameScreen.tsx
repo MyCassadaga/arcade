@@ -22,10 +22,11 @@ interface GameScreenProps {
   status: ConnectionStatus;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
+  recordActivity: () => void;
   onBackToArcade?: (() => void) | undefined;
 }
 
-export function GameScreen({ game, room, selfId, roomCode, sessionToken, status, commandPending, send, onBackToArcade }: GameScreenProps) {
+export function GameScreen({ game, room, selfId, roomCode, sessionToken, status, commandPending, send, recordActivity, onBackToArcade }: GameScreenProps) {
   const self = room.players.find((player) => player.id === selfId);
   const sendGame = (command: GameCommand) => send({
     type: "game.command",
@@ -70,7 +71,7 @@ export function GameScreen({ game, room, selfId, roomCode, sessionToken, status,
   if (game.gameId === "shirt-fight") {
     return <section className="game-stage shirt-fight"><ShirtFightScreen game={game} players={room.players}
       playerId={selfId} isHost={self?.isHost === true} roomCode={roomCode} sessionToken={sessionToken} sendGame={sendGame}
-      hostAdvance={hostAdvance} playAgain={playAgain} backToArcade={backToArcade} /></section>;
+      recordActivity={recordActivity} hostAdvance={hostAdvance} playAgain={playAgain} backToArcade={backToArcade} /></section>;
   }
 
   return (

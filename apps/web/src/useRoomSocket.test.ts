@@ -166,6 +166,22 @@ describe("idle connection traffic and timeout", () => {
     expect(socket.close).toHaveBeenCalledWith(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
   });
 
+  it("can reset the deadline after a meaningful non-WebSocket action completes", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const { result } = renderHook(() => useRoomSocket("ABCDE", "x".repeat(32), true));
+    const socket = MockWebSocket.instances[0] as MockWebSocket;
+    socket.readyState = MockWebSocket.OPEN;
+    act(() => { socket.dispatchEvent(new Event("open")); });
+
+    await act(() => vi.advanceTimersByTimeAsync(PLAYER_INACTIVITY_MS - 1_000));
+    act(() => result.current.recordActivity());
+    await act(() => vi.advanceTimersByTimeAsync(PLAYER_INACTIVITY_MS - 1));
+    expect(socket.close).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(socket.close).toHaveBeenCalledWith(PLAYER_INACTIVITY_CLOSE_CODE, PLAYER_INACTIVITY_CLOSE_REASON);
+  });
+
   it("does not reconnect after a server inactivity close until explicitly requested", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("WebSocket", MockWebSocket);
