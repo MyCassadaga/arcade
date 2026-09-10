@@ -34,6 +34,18 @@ export default {
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
+  const shirtFightMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/shirt-fight\/(drawings|assets\/([0-9a-f-]{36}))$/u);
+  if (shirtFightMatch) {
+    const parsedCode = roomCodeSchema.safeParse(shirtFightMatch[1]);
+    if (!parsedCode.success) return jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
+    const isUpload = shirtFightMatch[2] === "drawings" && request.method === "POST";
+    const isAsset = shirtFightMatch[2]?.startsWith("assets/") && request.method === "GET";
+    if (!isUpload && !isAsset) return jsonError("INVALID_COMMAND", "That asset action is not available.", 405);
+    const stub = env.ROOMS.get(env.ROOMS.idFromName(parsedCode.data));
+    const internalPath = isUpload ? "/internal/shirt-fight/drawings" : `/internal/shirt-fight/assets/${shirtFightMatch[3]}`;
+    return stub.fetch(new Request(`https://room.internal${internalPath}`, request));
+  }
+
   if (request.method === "POST" && url.pathname === "/api/rooms") {
     const body = await readJson(request);
     if (body === PAYLOAD_TOO_LARGE) return jsonError("INVALID_COMMAND", "Request payload is too large.", 413);
@@ -123,7 +135,7 @@ function withSecurityHeaders(response: Response, correlationId: string): Respons
   secured.headers.set("X-Content-Type-Options", "nosniff");
   secured.headers.set("Referrer-Policy", "same-origin");
   secured.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  secured.headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; base-uri 'none'; frame-ancestors 'none'");
+  secured.headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; base-uri 'none'; frame-ancestors 'none'");
   secured.headers.set("X-Request-Id", correlationId);
   return secured;
 }

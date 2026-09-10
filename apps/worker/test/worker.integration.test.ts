@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { abortAllDurableObjects, evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/types";
 import type { RoomSessionResponse, ServerMessage, TypedGameViewerState } from "@team-arcade/shared";
@@ -552,6 +552,151 @@ describe("AFTERPRINT through the party-game registry", () => {
     expect(reconnect.game).toEqual(finished);
     reconnect.socket.close(1000); socket.close(1000);
   });
+
+  it("runs Shirt Fight drawing uploads through private R2 authorization and deadline reconciliation", async () => {
+    const host = await create("Shirt Host");
+    const sessions = [host, await join(host.roomCode, "Shirt Two"), await join(host.roomCode, "Shirt Three")];
+    const sockets = await Promise.all(sessions.map(connectReady));
+    const hostSocket = sockets[0] as WebSocket;
+    hostSocket.send(JSON.stringify({ type: "host.selectGame", requestId: "shirt-select", payload: { gameId: "shirt-fight" } }));
+    await waitForMessage(sockets[1] as WebSocket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "shirt-fight");
+    const started = waitForGame(hostSocket, (game) => game.gameId === "shirt-fight" && game.phase === "drawing");
+    hostSocket.send(JSON.stringify({ type: "host.startGame", requestId: "shirt-start", payload: {} }));
+    const initial = await started;
+    expect(initial).toMatchObject({ gameId: "shirt-fight", public: { generationRound: 1, drawingNumber: 1, totalPlayers: 3, completedCount: 0 } });
+    expect(JSON.stringify(initial)).not.toContain("objectKey");
+
+    const unauthorized = await drawingUpload(host.roomCode, "x".repeat(43), validWebp());
+    expect(unauthorized.status).toBe(401);
+    const wrongType = await worker.fetch(new Request(`https://example.test/api/rooms/${host.roomCode}/shirt-fight/drawings`, {
+      method: "POST", headers: { authorization: `Bearer ${host.sessionToken}`, "content-type": "image/png" }, body: new Uint8Array(30).buffer
+    }), testEnv);
+    expect(wrongType.status).toBe(415);
+    const oversizedWithoutLength = await worker.fetch(new Request(`https://example.test/api/rooms/${host.roomCode}/shirt-fight/drawings`, {
+      method: "POST", headers: { authorization: `Bearer ${host.sessionToken}`, "content-type": "image/webp" }, body: new Uint8Array(160_001).buffer
+    }), testEnv);
+    expect(oversizedWithoutLength.status).toBe(413);
+
+    const drawingIds: string[] = [];
+    const phaseTwoPromise = waitForGame(hostSocket, (game) => game.gameId === "shirt-fight" && game.public.drawingNumber === 2);
+    const uploadResponses = await Promise.all(sessions.map((session) => drawingUpload(host.roomCode, session.sessionToken, validWebp())));
+    for (const response of uploadResponses) {
+      expect(response.status).toBe(201);
+      drawingIds.push((await response.json<{ drawingId: string }>()).drawingId);
+    }
+    const phaseTwo = await phaseTwoPromise;
+    expect(phaseTwo).toMatchObject({ private: { drawingSubmitted: false } });
+
+    const own = await drawingRead(host.roomCode, host.sessionToken, drawingIds[0] as string);
+    expect(own.status).toBe(200);
+    expect(own.headers.get("cache-control")).toBe("private, no-store");
+    expect(own.headers.get("content-type")).toBe("image/webp");
+    const foreign = await drawingRead(host.roomCode, sessions[1]?.sessionToken ?? "", drawingIds[0] as string);
+    expect(foreign.status).toBe(404);
+    const arbitrary = await drawingRead(host.roomCode, host.sessionToken, "00000000-0000-4000-8000-000000009999");
+    expect(arbitrary.status).toBe(404);
+
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'game'")] as unknown as Array<{ json_value: string }>;
+      const game = JSON.parse(row[0]?.json_value ?? "{}") as { state: { deadlineAt: number } };
+      game.state.deadlineAt = Date.now() - 1;
+      state.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'game'", JSON.stringify(game));
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const afterAlarm = await runInDurableObject(stub, (_instance, state) => {
+      const row = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'game'")] as unknown as Array<{ json_value: string }>;
+      return JSON.parse(row[0]?.json_value ?? "{}") as { state: { phase: string; phaseNonce: number; drawings: unknown[] } };
+    });
+    expect(afterAlarm.state.phase).toBe("slogans");
+    expect(Array.isArray(afterAlarm.state.drawings)).toBe(true);
+    expect(afterAlarm.state.drawings).toHaveLength(6);
+    const nonce = afterAlarm.state.phaseNonce;
+    await runDurableObjectAlarm(stub);
+    const repeatedNonce = await runInDurableObject(stub, (_instance, state) => {
+      const row = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'game'")] as unknown as Array<{ json_value: string }>;
+      return (JSON.parse(row[0]?.json_value ?? "{}") as { state: { phaseNonce: number } }).state.phaseNonce;
+    });
+    expect(repeatedNonce).toBe(nonce);
+    for (const socket of sockets) socket.close(1000, "test complete");
+  });
+
+  it("logically expires rooms while retaining an inaccessible Shirt Fight cleanup manifest", async () => {
+    const host = await create("Expiry Host");
+    const sessions = [host, await join(host.roomCode, "Expiry Two"), await join(host.roomCode, "Expiry Three")];
+    const sockets = await Promise.all(sessions.map(connectReady));
+    (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.selectGame", requestId: "expiry-select", payload: { gameId: "shirt-fight" } }));
+    await waitForMessage(sockets[1] as WebSocket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "shirt-fight");
+    const started = waitForGame(sockets[0] as WebSocket, (game) => game.gameId === "shirt-fight");
+    (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.startGame", requestId: "expiry-start", payload: {} }));
+    await started;
+    const upload = await drawingUpload(host.roomCode, host.sessionToken, validWebp());
+    const { drawingId } = await upload.json<{ drawingId: string }>();
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    const returned = waitForMessage(sockets[1] as WebSocket, (message) => message.type === "room.presence" && message.payload.roomPhase === "lobby");
+    (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.backToArcade", requestId: "abort-shirt-fight", payload: {} }));
+    await returned;
+    const abandonedManifest = await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'shirt-fight-assets'")] as unknown as Array<{ json_value: string }>;
+      return JSON.parse(rows[0]?.json_value ?? "{}") as { entries: Array<{ drawingId: string; cleanupAt?: number }> };
+    });
+    expect(abandonedManifest.entries.find((entry) => entry.drawingId === drawingId)?.cleanupAt).toBeGreaterThan(Date.now());
+    await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'metadata'")] as unknown as Array<{ json_value: string }>;
+      const metadata = JSON.parse(rows[0]?.json_value ?? "{}") as Record<string, unknown>;
+      metadata.lastActivityAt = Date.now() - 12 * 60 * 60 * 1_000 - 1;
+      state.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'metadata'", JSON.stringify(metadata));
+    });
+    const expired = await call(`/api/rooms/${host.roomCode}/session`, { sessionToken: host.sessionToken });
+    expect(expired.status).toBe(410);
+    expect((await drawingRead(host.roomCode, host.sessionToken, drawingId)).status).toBe(410);
+    const tombstone = await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT key, json_value FROM room_state")] as unknown as Array<{ key: string; json_value: string }>;
+      return rows;
+    });
+    expect(tombstone.some((row) => row.key === "metadata" && row.json_value.includes("expiredAt"))).toBe(true);
+    expect(tombstone.some((row) => row.key === "shirt-fight-assets" && row.json_value.includes("cleanupAt"))).toBe(true);
+    expect(JSON.stringify(tombstone)).toContain(drawingId);
+    for (const socket of sockets) socket.close(1000, "test complete");
+  });
+
+  it("durably retries transient fallback storage failure", async () => {
+    const host = await create("Deadline Host");
+    const sessions = [host, await join(host.roomCode, "Deadline Two"), await join(host.roomCode, "Deadline Three")];
+    const sockets = await Promise.all(sessions.map(connectReady));
+    (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.selectGame", requestId: "deadline-select", payload: { gameId: "shirt-fight" } }));
+    await waitForMessage(sockets[1] as WebSocket, (message) => message.type === "room.presence" && message.payload.selectedGameId === "shirt-fight");
+    const started = waitForGame(sockets[0] as WebSocket, (game) => game.gameId === "shirt-fight");
+    (sockets[0] as WebSocket).send(JSON.stringify({ type: "host.startGame", requestId: "deadline-start", payload: {} }));
+    await started;
+    const stub = testEnv.ROOMS.get(testEnv.ROOMS.idFromName(host.roomCode));
+    const bucket = testEnv.SHIRT_FIGHT_DRAWINGS;
+    await setShirtFightDeadline(stub, Date.now() - 1);
+    const failedPut = vi.spyOn(bucket, "put").mockRejectedValueOnce(new Error("transient R2 failure"));
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    failedPut.mockRestore();
+    const retryManifest = await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'shirt-fight-assets'")] as unknown as Array<{ json_value: string }>;
+      return JSON.parse(rows[0]?.json_value ?? "{}") as { entries: Array<{ fallbackRetryCount: number; fallbackRetryAt?: number }> };
+    });
+    expect(retryManifest.entries.some((entry) => entry.fallbackRetryCount === 1 && typeof entry.fallbackRetryAt === "number")).toBe(true);
+    await runInDurableObject(stub, (_instance, state) => {
+      const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'shirt-fight-assets'")] as unknown as Array<{ json_value: string }>;
+      const manifest = JSON.parse(rows[0]?.json_value ?? "{}") as { entries: Array<Record<string, unknown>> };
+      for (const entry of manifest.entries) if (entry.fallbackRetryAt) entry.fallbackRetryAt = Date.now() - 1;
+      state.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'shirt-fight-assets'", JSON.stringify(manifest));
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const recoveredFirstPhase = await readStoredShirtFight(stub);
+    expect(recoveredFirstPhase.state).toMatchObject({ phase: "drawing", drawingNumber: 2 });
+    expect(recoveredFirstPhase.state.drawings).toHaveLength(3);
+    await setShirtFightDeadline(stub, Date.now() - 1);
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const recoveredSecondPhase = await readStoredShirtFight(stub);
+    expect(recoveredSecondPhase.state.phase).toBe("slogans");
+    expect(recoveredSecondPhase.state.drawings).toHaveLength(6);
+    for (const socket of sockets) socket.close(1000, "test complete");
+  });
 });
 
 async function create(displayName: string): Promise<RoomSessionResponse> {
@@ -572,6 +717,51 @@ function call(path: string, body: unknown): Promise<Response> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   }), testEnv);
+}
+
+function drawingUpload(roomCode: string, sessionToken: string, body: Uint8Array): Promise<Response> {
+  return worker.fetch(new Request(`https://example.test/api/rooms/${roomCode}/shirt-fight/drawings`, {
+    method: "POST",
+    headers: { "content-type": "image/webp", authorization: `Bearer ${sessionToken}` },
+    body: new Uint8Array(body).buffer
+  }), testEnv);
+}
+
+function drawingRead(roomCode: string, sessionToken: string, drawingId: string): Promise<Response> {
+  return worker.fetch(new Request(`https://example.test/api/rooms/${roomCode}/shirt-fight/assets/${drawingId}`, {
+    headers: { authorization: `Bearer ${sessionToken}` }
+  }), testEnv);
+}
+
+function validWebp(): Uint8Array {
+  const bytes = new Uint8Array(48);
+  bytes.set(new TextEncoder().encode("RIFF"), 0);
+  bytes.set([40, 0, 0, 0], 4);
+  bytes.set(new TextEncoder().encode("WEBPVP8X"), 8);
+  bytes.set([10, 0, 0, 0], 16);
+  bytes.set([0, 0, 0, 0], 20);
+  bytes.set([0x57, 0x02, 0x00], 24);
+  bytes.set([0x1f, 0x03, 0x00], 27);
+  bytes.set(new TextEncoder().encode("VP8 "), 30);
+  bytes.set([10, 0, 0, 0], 34);
+  bytes.set([0, 0, 0, 0x9d, 0x01, 0x2a, 0x57, 0x02, 0x1f, 0x03], 38);
+  return bytes;
+}
+
+async function setShirtFightDeadline(stub: DurableObjectStub, deadlineAt: number): Promise<void> {
+  await runInDurableObject(stub, (_instance, state) => {
+    const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'game'")] as unknown as Array<{ json_value: string }>;
+    const game = JSON.parse(rows[0]?.json_value ?? "{}") as { state: { deadlineAt: number } };
+    game.state.deadlineAt = deadlineAt;
+    state.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'game'", JSON.stringify(game));
+  });
+}
+
+function readStoredShirtFight(stub: DurableObjectStub) {
+  return runInDurableObject(stub, (_instance, state) => {
+    const rows = [...state.storage.sql.exec("SELECT json_value FROM room_state WHERE key = 'game'")] as unknown as Array<{ json_value: string }>;
+    return JSON.parse(rows[0]?.json_value ?? "{}") as { state: { phase: string; drawingNumber?: number; drawings: Array<{ artistPlayerId: string; fallback: boolean }> } };
+  });
 }
 
 async function connect(session: RoomSessionResponse): Promise<WebSocket> {

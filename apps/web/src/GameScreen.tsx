@@ -1,6 +1,7 @@
 import { PhaseCard, AnswerForm, TextCommandForm, Progress, Waiting, PrimaryAction, Points, ScoreBoard, GameResults, playerName } from "./game-presentation";
 import { CategoriesScreen } from "./CategoriesScreen";
 import { AfterprintScreen } from "./AfterprintScreen";
+import { ShirtFightScreen } from "./ShirtFightScreen";
 import type {
   ClientMessage,
   GameCommand,
@@ -16,13 +17,15 @@ interface GameScreenProps {
   game: TypedGameViewerState;
   room: RoomView;
   selfId: string;
+  roomCode: string;
+  sessionToken: string;
   status: ConnectionStatus;
   commandPending: boolean;
   send: (message: ClientMessage) => boolean;
   onBackToArcade?: (() => void) | undefined;
 }
 
-export function GameScreen({ game, room, selfId, status, commandPending, send, onBackToArcade }: GameScreenProps) {
+export function GameScreen({ game, room, selfId, roomCode, sessionToken, status, commandPending, send, onBackToArcade }: GameScreenProps) {
   const self = room.players.find((player) => player.id === selfId);
   const sendGame = (command: GameCommand) => send({
     type: "game.command",
@@ -62,6 +65,12 @@ export function GameScreen({ game, room, selfId, status, commandPending, send, o
         <AfterprintScreen game={game} commandPending={commandPending} sendGame={sendGame} playAgain={playAgain} backToArcade={afterprintBackToArcade} />
       </section>
     );
+  }
+
+  if (game.gameId === "shirt-fight") {
+    return <section className="game-stage shirt-fight"><ShirtFightScreen game={game} players={room.players}
+      isHost={self?.isHost === true} roomCode={roomCode} sessionToken={sessionToken} sendGame={sendGame}
+      hostAdvance={hostAdvance} playAgain={playAgain} backToArcade={backToArcade} /></section>;
   }
 
   return (

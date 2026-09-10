@@ -6,7 +6,8 @@
 Browser A ─┐
 Browser B ─┼── HTTPS / WebSocket ──> Cloudflare Worker ──> Room Durable Object
 Browser C ─┤                                           ├── SQLite-backed DO storage
-Browser ...┘                                           └── room state + game engine
+Browser ...┘                                           ├── room state + game engine
+                                                     └── private temporary R2 drawings
 
 Static React assets are served from Cloudflare.
 ```
@@ -62,11 +63,13 @@ Owns:
 
 ### Party-game registry and presentation
 
-`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, Categories, and AFTERPRINT. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; new games add discriminants without changing SQLite tables.
+`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, Categories, AFTERPRINT, and Shirt Fight. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; new games add discriminants without changing SQLite tables.
 
 System Crawl stays hidden and uses its existing separate routing; it is outside this refactor.
 
-`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels. AFTERPRINT has a compact solo screen that reuses the pure simulator for visual replay while the Worker remains authoritative for attempts and completion.
+`apps/web/src/game-presentation.tsx` holds the demonstrated phase card, text form, progress/waiting, points, scoreboard and results components. Game screens retain their own phase-specific presentation. Categories renders answer text and author names only from revealed groups, with explicit Unique/Cancelled labels. AFTERPRINT has a compact solo screen that reuses the pure simulator for visual replay while the Worker remains authoritative for attempts and completion. Shirt Fight adds a touch-first 600×800 canvas, rapid slogan entry, independent drawing/slogan selection, private voting controls, and a host-selectable public display that consumes only the public projection.
+
+Shirt Fight drawing binaries use the private `SHIRT_FIGHT_DRAWINGS` R2 binding and application-owned HTTP routes. A server-only Durable Object manifest reserves opaque object keys before upload, while the stored game JSON contains only validated drawing IDs and bounded metadata. Session credentials travel in an `Authorization` header, never an asset URL. The Durable Object authorizes each read against the viewer and current phase; responses are private/non-store and never expose R2 keys or URLs.
 
 ### Game modules
 Own:
@@ -125,6 +128,8 @@ Do not broadcast before persistence succeeds.
 Connection metadata required after wake must be stored using Cloudflare-supported WebSocket attachment/session mechanisms and/or reconstructed from durable storage.
 
 The code must not depend on a process-global or in-memory Map as the only record of player identity or game state.
+
+Shirt Fight also uses the one Durable Object alarm. Its persisted deadline reconciliation runs before commands, reconnect projections, and alarm work; the scheduler chooses the earliest game deadline, host failover, room expiry, or asset-cleanup retry. Logical expiry denies normal access while retaining a private R2 cleanup tombstone until every recorded object is deleted.
 
 ## Reconnection
 

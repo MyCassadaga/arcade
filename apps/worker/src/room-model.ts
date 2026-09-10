@@ -13,6 +13,7 @@ export interface RoomMetadata {
   roomPhase: RoomPhase;
   createdAt: number;
   lastActivityAt: number;
+  expiredAt?: number;
 }
 
 export function normalizeDisplayName(displayName: string): string {

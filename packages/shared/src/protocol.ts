@@ -194,9 +194,34 @@ export type AfterprintInk = z.infer<typeof afterprintInkSchema>;
 export type AfterprintBoard = Array<AfterprintInk | null>;
 export type AfterprintEvent = z.infer<typeof afterprintEventSchema>;
 
+export const SHIRT_FIGHT_COLORS = ["red", "orange", "yellow", "green", "blue", "indigo", "violet", "black", "white"] as const;
+export const SHIRT_FIGHT_BRUSH_SIZES = ["small", "medium", "large"] as const;
+const shirtFightIdentitySchema = z.object({
+  gameInstanceId: z.string().uuid(),
+  phaseNonce: z.number().int().nonnegative()
+});
+export const shirtFightCommandSchema = z.discriminatedUnion("type", [
+  shirtFightIdentitySchema.extend({
+    type: z.literal("shirtFight.submitSlogan"),
+    text: z.string().trim().min(1).max(80)
+  }).strict(),
+  shirtFightIdentitySchema.extend({ type: z.literal("shirtFight.finishSlogans") }).strict(),
+  shirtFightIdentitySchema.extend({
+    type: z.literal("shirtFight.submitShirt"),
+    drawingId: z.string().uuid(),
+    sloganId: z.string().uuid()
+  }).strict(),
+  shirtFightIdentitySchema.extend({
+    type: z.literal("shirtFight.submitVote"),
+    shirtId: z.string().uuid()
+  }).strict()
+]);
+export type ShirtFightCommand = z.infer<typeof shirtFightCommandSchema>;
+
 export const gameCommandSchema = z.union([
   afterprintCommandSchema,
   categoriesCommandSchema,
+  shirtFightCommandSchema,
   whoSaidThatCommandSchema,
   impostorCommandSchema,
   systemCrawlCommandSchema
@@ -264,7 +289,7 @@ export interface RoomView {
 }
 
 export interface GameViewerState {
-  gameId: "who-said-that" | "impostor" | "categories" | "afterprint" | "system-crawl";
+  gameId: "who-said-that" | "impostor" | "categories" | "afterprint" | "shirt-fight" | "system-crawl";
   phase: string;
   public: unknown;
   private?: unknown;
@@ -379,9 +404,59 @@ export interface AfterprintPrivateView {
   canSubmit: boolean;
 }
 
+export interface ShirtFightDrawingView {
+  id: string;
+  width: number;
+  height: number;
+}
+
+export interface ShirtFightShirtView {
+  id: string;
+  drawing: ShirtFightDrawingView;
+  slogan: string;
+}
+
+export interface ShirtFightCreditView {
+  artistPlayerId: string;
+  authorPlayerId: string;
+  assemblerPlayerId: string;
+}
+
+export interface ShirtFightAwardView {
+  title: string;
+  description: string;
+  playerIds: string[];
+}
+
+export interface ShirtFightPublicView {
+  gameInstanceId: string;
+  phaseNonce: number;
+  phase: string;
+  generationRound: 1 | 2 | 3;
+  drawingNumber?: 1 | 2;
+  deadlineAt?: number;
+  completedCount: number;
+  totalPlayers: number;
+  matchup?: { id: string; shirts: [ShirtFightShirtView, ShirtFightShirtView]; voteCount: number; suddenDeath: boolean };
+  reveal?: { shirt: ShirtFightShirtView; credits: ShirtFightCreditView; randomTieBreak: boolean };
+  winner?: { shirt: ShirtFightShirtView; credits: ShirtFightCreditView };
+  awards?: ShirtFightAwardView[];
+}
+
+export interface ShirtFightPrivateView {
+  drawingSubmitted?: boolean;
+  slogans?: Array<{ id: string; text: string }>;
+  slogansDone?: boolean;
+  assignment?: { drawings: ShirtFightDrawingView[]; slogans: Array<{ id: string; text: string }> };
+  draft?: { drawingId: string; sloganId: string };
+  shirtSubmitted?: boolean;
+  hasVoted?: boolean;
+}
+
 export type TypedGameViewerState =
   | { gameId: "afterprint"; phase: "playing" | "gameResults"; public: AfterprintPublicView; private: AfterprintPrivateView }
   | { gameId: "categories"; phase: "submitting" | "reveal" | "roundResults" | "gameResults"; public: CategoriesPublicView; private: CategoriesPrivateView }
+  | { gameId: "shirt-fight"; phase: "drawing" | "slogans" | "assembly" | "voting" | "roundReveal" | "finalVoting" | "finalReveal" | "gameResults"; public: ShirtFightPublicView; private: ShirtFightPrivateView }
   | { gameId: "who-said-that"; phase: "submitting" | "guessing" | "reveal" | "roundResults" | "gameResults"; public: WhoSaidThatPublicView; private: WhoSaidThatPrivateView }
   | { gameId: "impostor"; phase: "roleReveal" | "clueSubmission" | "clueReveal" | "discussion" | "voting" | "voteReveal" | "impostorGuess" | "roundResults" | "gameResults"; public: ImpostorPublicView; private: ImpostorPrivateView }
   | { gameId: "system-crawl"; phase: "class_selection" | "ready_to_start" | "incident_briefing" | "player_turn" | "resolving_choice" | "enemy_phase" | "victory" | "defeat"; public: unknown; private?: unknown };
