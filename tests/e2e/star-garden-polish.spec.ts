@@ -16,6 +16,7 @@ for (const [name, width, height] of sizes) test(`Star Garden polish: ${name} com
   expect(picker.length).toBeGreaterThan(1); for (let i = 1; i < picker.length; i++) expect(picker[i]!.top - picker[i - 1]!.bottom).toBeGreaterThanOrEqual(10);
   await page.getByRole("button", { name: "Play Star Garden solo" }).click(); await page.getByRole("radio", { name: /Solo Practice/ }).check(); await page.getByRole("button", { name: "Begin", exact: true }).click();
   await expect(page.getByRole("group", { name: "Your garden", exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Refill flow: across the top row from left to right.*bottom row from right to left/ })).toBeVisible();
   await page.locator(".sg-shell").evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)));
   const geometry = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, hand: document.querySelector(".sg-hand")!.getBoundingClientRect().bottom, board: document.querySelector(".sg-garden")!.getBoundingClientRect().bottom, targets: [...document.querySelectorAll(".sg-garden button,.sg-card-list button,.sg-goal")].map((node) => ({ w: node.getBoundingClientRect().width, h: node.getBoundingClientRect().height })) }));
   expect(geometry.width).toBe(width); expect(geometry.hand).toBeLessThan(height); expect(geometry.board).toBeLessThan(height);

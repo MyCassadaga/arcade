@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { GameCommand, PlayerView, StarGardenEffect, StarGardenGoal, StarGardenMode, StarKind, TypedGameViewerState } from "@team-arcade/shared";
 import { STAR_GARDEN_ACTIONS, STAR_GARDEN_GOALS, matchStarGardenGoal, previewStarGardenAction, refillStars, starGardenMatches } from "@team-arcade/games/star-garden";
 import { readStarGardenHistory, recordStarGardenResult } from "./star-garden-history";
@@ -150,7 +150,7 @@ function StarGardenPlay({ game, connected, commandPending, sendGame, changedCell
     <section className="sg-objectives" aria-label="Available constellations">{v.goals.map((g) => { const matches = starGardenMatches(p.board, g); return <button key={g.id} className={`sg-goal sg-tier-${g.tier} ${matches.length ? "sg-matchable" : ""} ${goalId === g.id ? "sg-selected" : ""}`} disabled={blocked || matches.length === 0} aria-pressed={goalId === g.id} onClick={() => { reset(); setGoalId(g.id); setOrigin(matches[0]!); }} aria-label={`${g.name}, ${g.points} points, ${matches.length} matching origins`}><span className="sg-goal-top">{g.tier}<b>{g.points} pts</b></span><Constellation goal={g} /><strong>{g.name}</strong><small>{goalId === g.id ? "Selected" : matches.length ? `✧ ${matches.length} match${matches.length === 1 ? "" : "es"}` : "No match yet"}</small></button>; })}</section>
     <details className="sg-pattern-key"><summary>Pattern key <span>A ≠ B · fixed orientation</span></summary><p>Same letter = same kind. A and B differ. Dots don’t matter. Orientation is fixed.</p></details>
 
-    <div className="sg-garden"><div className="sg-section-heading"><h2>Your garden</h2><span>Flow → then ←</span></div><StarBoard board={p.board} label="Your garden" changedCells={changedCells} selected={selectedCells} disabled={blocked || !card} onSelect={(cell) => { const two = ["exchange", "blink", "echo"].includes(card?.action ?? ""); setSelected((old) => old.includes(cell) ? old.filter((c) => c !== cell) : two && old.length === 1 ? [...old, cell] : [cell]); }} /></div>
+    <div className="sg-garden"><div className="sg-section-heading"><h2>Your garden</h2><span>Flow → then ←</span></div><StarBoard board={p.board} label="Your garden" movement={{ kind: "refill", label: "Refill flow: across the top row from left to right, down at the right edge, then across the bottom row from right to left, ending at bottom-left." }} changedCells={changedCells} selected={selectedCells} disabled={blocked || !card} onSelect={(cell) => { const two = ["exchange", "blink", "echo"].includes(card?.action ?? ""); setSelected((old) => old.includes(cell) ? old.filter((c) => c !== cell) : two && old.length === 1 ? [...old, cell] : [cell]); }} /></div>
     {goal && <div className="sg-origins" aria-label="Choose matching origin">{starGardenMatches(p.board, goal).map((o) => <button key={o} aria-label={`Origin row ${Math.floor(o / 5) + 1} column ${o % 5 + 1}`} disabled={blocked} aria-pressed={origin === o} onClick={() => setOrigin(o)}>R{Math.floor(o / 5) + 1} · C{o % 5 + 1}</button>)}</div>}
     </div><div className="sg-console">
     <section className="sg-hand" aria-label="Your hand"><div className="sg-section-heading"><h2>Your cards</h2><span>Play one · no automatic draw</span></div><div className="sg-card-list" onFocus={(event) => {
@@ -166,7 +166,7 @@ function StarGardenPlay({ game, connected, commandPending, sendGame, changedCell
       {card?.action === "spin" && <label>Rotation<select value={rotation} onChange={(e) => setRotation(e.target.value as typeof rotation)}><option value="clockwise">Clockwise ↻</option><option value="counterclockwise">Counterclockwise ↺</option></select></label>}
       {card && ["drift", "crosswind"].includes(card.action) && <label>{card.action === "crosswind" ? "Top row direction" : "Direction"}<select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}><option value="left">Left ←</option><option value="right">Right →</option></select></label>}
       {card?.action === "scramble" && <label>New order of the three positions<select value={permutation.join(",")} onChange={(e) => setPermutation(e.target.value.split(",").map(Number) as [number, number, number])}>{[[0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]].map((order) => <option key={order.join()} value={order.join()}>{order.map((n) => n + 1).join(" → ")}</option>)}</select></label>}
-      <p role="status">{reason}</p>{preview && <StarBoard board={preview} label="Preview, not committed" />}
+      <p role="status">{reason}</p>{preview && <StarBoard board={preview} label="Preview, not committed" movement={previewMovement(effect, Boolean(goal))} />}
       <div className="sg-controls"><button className="sg-primary" disabled={blocked || !preview || (v.mode === "cup" && !goal && p.remainingActions < (refresh ? 3 : 1))} onClick={confirm}>Confirm {goal ? "claim" : refresh ? "Refresh" : "card"}</button><button disabled={blocked} onClick={cancel}>Cancel</button></div>
     </section>}
     <div className="sg-controls sg-secondary"><button disabled={blocked || p.hand.length < 3 || (v.mode === "cup" && p.remainingActions < 3)} onClick={() => { reset(); setRefresh(true); }}>Refresh · discard 3</button>{v.mode === "cup" ? <button disabled={blocked} onClick={() => commit({ type: "starGarden.doneRound", ...identity })}>Done · no claim</button> : <button disabled={blocked} onClick={() => setEndConfirm(true)}>End Run</button>}</div>
@@ -174,8 +174,39 @@ function StarGardenPlay({ game, connected, commandPending, sendGame, changedCell
     </div>
   </div>;
 }
-export function StarBoard({ board, label, selected = [], changedCells = [], disabled = true, onSelect }: { board: readonly (StarKind | null)[]; label: string; selected?: number[]; changedCells?: number[]; disabled?: boolean; onSelect?: (cell: number) => void }) {
-  return <div className="sg-board" role="group" aria-label={label}>{board.map((kind, cell) => <button key={cell} className={`sg-star sg-kind-${kind ?? "unknown"} ${selected.includes(cell) ? "sg-selected" : ""} ${changedCells.includes(cell) ? "sg-changed" : ""}`} aria-label={`Row ${Math.floor(cell / 5) + 1} column ${cell % 5 + 1}: ${kind === null ? "unknown new star" : KINDS[kind].name}`} aria-pressed={selected.includes(cell)} disabled={disabled} onClick={() => onSelect?.(cell)}><CelestialPiece kind={kind} /></button>)}</div>;
+type BoardMovement =
+  | { kind: "refill"; label: string }
+  | { kind: "rows"; top: "left" | "right"; bottom: "left" | "right"; label: string }
+  | { kind: "row"; row: number; direction: "left" | "right"; wrap?: boolean; mirror?: boolean; label: string }
+  | { kind: "spin"; origin: number; direction: "clockwise" | "counterclockwise"; label: string };
+
+function previewMovement(effect: StarGardenEffect | null, claim: boolean): BoardMovement | undefined {
+  if (claim) return { kind: "refill", label: "Claim preview refill: stars follow the permanent path; unknown stars enter upstream." };
+  if (!effect) return undefined;
+  switch (effect.action) {
+    case "collapse": return { kind: "refill", label: "Collapse preview refill: stars follow the permanent path; one unknown star enters upstream." };
+    case "crosswind": return { kind: "rows", top: effect.direction, bottom: effect.direction === "left" ? "right" : "left", label: `Crosswind preview: top row moves ${effect.direction}; bottom row moves ${effect.direction === "left" ? "right" : "left"}. Both rows wrap.` };
+    case "drift": return { kind: "row", row: effect.row, direction: effect.direction, wrap: true, label: `Drift preview: row ${effect.row + 1} moves ${effect.direction} and wraps within the row.` };
+    case "mirror": return { kind: "row", row: effect.row, direction: "left", mirror: true, label: `Mirror preview: row ${effect.row + 1} reverses, exchanging its left and right ends.` };
+    case "spin": return { kind: "spin", origin: effect.origin, direction: effect.direction, label: `Spin preview: the selected 2 by 2 block rotates ${effect.direction}.` };
+    default: return undefined;
+  }
+}
+
+function BoardMovementOverlay({ movement }: { movement: BoardMovement }) {
+  const marker = `sg-arrow-${useId().replace(/:/g, "")}`, arrow = `url(#${marker})`;
+  const rowPath = (row: number, direction: "left" | "right") => <g>{Array.from({ length: 5 }, (_, column) => { const left = column * 20 + 2, right = left + 16, y = row ? 35 : 5; return <path key={column} d={direction === "right" ? `M${left} ${y}H${right}` : `M${right} ${y}H${left}`} markerEnd={arrow} />; })}</g>;
+  return <svg className={`sg-movement sg-movement-${movement.kind}`} viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={movement.label} data-movement={movement.kind}>
+    <defs><marker id={marker} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" className="sg-movement-arrow" /></marker></defs>
+    {movement.kind === "refill" && <>{rowPath(0, "right")}<path d="M98 7V33" markerEnd={arrow} />{rowPath(1, "left")}<circle cx="2" cy="5" r="1.6" /><circle className="sg-movement-end" cx="2" cy="35" r="2.1" /></>}
+    {movement.kind === "rows" && <>{rowPath(0, movement.top)}{rowPath(1, movement.bottom)}<path className="sg-movement-wrap" d="M3 3Q0 20 3 37M97 3Q100 20 97 37" /></>}
+    {movement.kind === "row" && <>{movement.mirror ? <><path d={`M4 ${movement.row ? 35 : 5}H42`} markerEnd={arrow} /><path d={`M96 ${movement.row ? 35 : 5}H58`} markerEnd={arrow} /><path className="sg-movement-mirror" d={`M50 ${movement.row ? 30 : 0}V${movement.row ? 40 : 10}`} /></> : rowPath(movement.row, movement.direction)}{movement.wrap && <path className="sg-movement-wrap" d={`M3 ${movement.row ? 31 : 1}Q-1 ${movement.row ? 35 : 5} 3 ${movement.row ? 39 : 9}M97 ${movement.row ? 31 : 1}Q101 ${movement.row ? 35 : 5} 97 ${movement.row ? 39 : 9}`} />}</>}
+    {movement.kind === "spin" && (() => { const column = movement.origin % 5, row = Math.floor(movement.origin / 5), x = column * 20 + 3, y = row * 20 + 3; return <path d={movement.direction === "clockwise" ? `M${x} ${y + 13}V${y}H${x + 34}V${y + 14}H${x + 22}` : `M${x + 34} ${y + 13}V${y}H${x}V${y + 14}H${x + 12}`} markerEnd={arrow} />; })()}
+  </svg>;
+}
+
+export function StarBoard({ board, label, movement, selected = [], changedCells = [], disabled = true, onSelect }: { board: readonly (StarKind | null)[]; label: string; movement?: BoardMovement | undefined; selected?: number[]; changedCells?: number[]; disabled?: boolean; onSelect?: (cell: number) => void }) {
+  return <div className="sg-board" role="group" aria-label={label}>{movement && <BoardMovementOverlay movement={movement} />}{board.map((kind, cell) => <button key={cell} className={`sg-star sg-kind-${kind ?? "unknown"} ${selected.includes(cell) ? "sg-selected" : ""} ${changedCells.includes(cell) ? "sg-changed" : ""}`} aria-label={`Row ${Math.floor(cell / 5) + 1} column ${cell % 5 + 1}: ${kind === null ? "unknown new star" : KINDS[kind].name}`} aria-pressed={selected.includes(cell)} disabled={disabled} onClick={() => onSelect?.(cell)}><CelestialPiece kind={kind} /></button>)}</div>;
 }
 function Constellation({ goal }: { goal: StarGardenGoal }) {
   const rows = goal.pattern.split("/"), width = rows[0]!.length;

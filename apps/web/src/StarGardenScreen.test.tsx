@@ -33,8 +33,10 @@ describe("Star Garden presentation", () => {
     const board = within(screen.getByRole("group", { name: "Your garden" }));
     await user.click(board.getByRole("button", { name: /Row 1 column 1/ })); await user.click(board.getByRole("button", { name: /Row 1 column 2/ }));
     expect(screen.getByText(/leaves the colors unchanged/)).toBeVisible(); await user.click(screen.getByRole("button", { name: "Cancel" })); expect(sendGame).not.toHaveBeenCalled();
+    expect(screen.queryByRole("img", { name: /preview:/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Mutation 1 action/ })); await user.click(board.getByRole("button", { name: /Row 1 column 1/ }));
     expect(within(screen.getByRole("group", { name: "Preview, not committed" })).getByRole("button", { name: /unknown new star/ })).toBeVisible();
+    expect(within(screen.getByRole("group", { name: "Preview, not committed" })).queryByRole("img", { name: /preview:/i })).not.toBeInTheDocument();
     const confirm = screen.getByRole("button", { name: "Confirm card" }); fireEvent.click(confirm); fireEvent.click(confirm); expect(sendGame).toHaveBeenCalledTimes(1);
   });
   it("allows keyboard selection among overlapping origins and zero-card claims", async () => {
@@ -86,4 +88,28 @@ it("shows move feedback only after an authoritative revision and restores keyboa
   expect(document.activeElement).not.toBe(document.body);
   expect(within(screen.getByRole("group", { name: "Your garden" })).getAllByRole("button")[0]).toHaveClass("sg-changed");
   expect(sendGame).toHaveBeenCalledTimes(1);
+});
+
+it("traces the permanent refill path without changing the interactive board", () => {
+  show(start());
+  expect(screen.getByRole("img", { name: /Refill flow: across the top row from left to right.*bottom row from right to left.*bottom-left/ })).toHaveAttribute("data-movement", "refill");
+  expect(within(screen.getByRole("group", { name: "Your garden" })).getAllByRole("button")).toHaveLength(10);
+});
+
+it.each([
+  ["crosswind", 0, "Top row direction", "right", /top row moves right; bottom row moves left.*wrap/i, "rows"],
+  ["crosswind", 0, "Top row direction", "left", /top row moves left; bottom row moves right.*wrap/i, "rows"],
+  ["drift", 5, "Direction", "right", /row 2 moves right and wraps/i, "row"],
+  ["drift", 5, "Direction", "left", /row 2 moves left and wraps/i, "row"],
+  ["mirror", 5, null, null, /row 2 reverses.*left and right ends/i, "row"],
+  ["collapse", 5, null, null, /Collapse preview refill: stars follow the permanent path; one unknown star enters upstream/i, "refill"],
+  ["spin", 1, "Rotation", "clockwise", /selected 2 by 2 block rotates clockwise/i, "spin"],
+  ["spin", 1, "Rotation", "counterclockwise", /selected 2 by 2 block rotates counterclockwise/i, "spin"]
+] as const)("shows %s movement for option %s", async (action, cell, optionLabel, option, description, movement) => {
+  const s = start(); s.players.p!.hand = [{ id: `${action}-1`, action }];
+  show(s); const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: new RegExp(`^${action}`, "i") }));
+  if (optionLabel && option) await user.selectOptions(screen.getByLabelText(optionLabel), option);
+  await user.click(within(screen.getByRole("group", { name: "Your garden" })).getAllByRole("button")[cell]!);
+  expect(screen.getByRole("img", { name: description })).toHaveAttribute("data-movement", movement);
 });
