@@ -284,7 +284,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
 
   return (
     <main
-      className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""} ${game?.gameId === "shirt-fight" ? "shirt-fight-room" : ""}`}
+      className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""} ${game?.gameId === "shirt-fight" ? "shirt-fight-room" : ""} ${game?.gameId === "star-garden" ? "star-garden-room" : ""}`}
       style={{ "--arcade-viewport-height": `${viewportHeight}px` } as CSSProperties}
     >
       <header className="lobby-header">
@@ -322,7 +322,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
         </div>
       )}
 
-      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""}`}>
+      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""} ${game?.gameId === "star-garden" ? "star-garden-layout" : ""}`}>
         {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} roomCode={session.roomCode} sessionToken={session.sessionToken} status={status} commandPending={commandPending} send={send} recordActivity={recordActivity} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
@@ -361,7 +361,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
           )}
         </section>}
 
-        {!soloGameId && game?.gameId !== "afterprint" && <aside className="players-panel" aria-labelledby="players-title">
+        {!soloGameId && game?.gameId !== "afterprint" && game?.gameId !== "star-garden" && <aside className="players-panel" aria-labelledby="players-title">
           <div className="players-heading">
             <div><p className="eyebrow">The crew</p><h2 id="players-title">Players</h2></div>
             <span className="player-count">{room?.players.length ?? 0}/12</span>

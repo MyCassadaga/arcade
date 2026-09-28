@@ -3,6 +3,7 @@ import { GameRuleError } from "@team-arcade/game-core";
 import {
   SystemCrawlRuleError,
   advanceShirtFightDue,
+  advanceStarGardenDue,
   canViewerAccessShirtFightDrawing,
   deterministicUuid,
   isShirtFightDrawingUploadCurrent,
@@ -432,6 +433,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     } catch (error) {
       if (error instanceof GameRuleError || error instanceof SystemCrawlRuleError) {
         this.sendError(socket, error.code, error.message, parsed.data.requestId);
+        if (parsed.data.type === "game.command" && parsed.data.payload.command.type.startsWith("starGarden.")) this.sendGameState(socket, attachment.playerId);
         return;
       }
       console.error(JSON.stringify({
@@ -492,7 +494,10 @@ export class RoomDurableObject extends DurableObject<Env> {
       });
     }
 
-    if (metadata.expiredAt === undefined) await this.reconcileShirtFightDue(now, true);
+    if (metadata.expiredAt === undefined) {
+      await this.reconcileShirtFightDue(now, true);
+      await this.reconcileStarGardenDue(now);
+    }
     await this.cleanupDueAssets(now);
     metadata = this.readMetadata();
     if (!metadata || metadata.expiredAt !== undefined) {
@@ -536,6 +541,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
 
     await this.reconcileShirtFightDue(Date.now(), true);
+    await this.reconcileStarGardenDue(Date.now());
 
     const tokenHash = await hashSessionToken(message.payload.sessionToken);
     const player = this.readPlayers().find((candidate) => candidate.sessionTokenHash === tokenHash);
@@ -552,7 +558,7 @@ export class RoomDurableObject extends DurableObject<Env> {
         now,
         player.id
       );
-      this.writeMetadata({ ...metadata, lastActivityAt: now });
+      this.writeMetadata({ ...this.readMetadata()!, lastActivityAt: now });
     });
     socket.serializeAttachment({ playerId: player.id } satisfies SocketAttachment);
     await this.scheduleAlarm();
@@ -575,6 +581,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
+    await this.reconcileStarGardenDue(Date.now());
+
     if (message.type === "room.reconnect") {
       await this.recordPlayerActivity(playerId);
       this.send(socket, { type: "room.snapshot", payload: this.roomView() });
@@ -583,7 +591,16 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
+    const starReceipt = this.readStarGardenReceipts().find((r) => r.playerId === playerId && r.requestId === message.requestId);
+    const isStarCommand = message.type === "game.command" && message.payload.command.type.startsWith("starGarden.");
+    if (starReceipt) {
+      if (starReceipt.payload !== JSON.stringify(message)) throw new GameRuleError("INVALID_COMMAND", "A request ID cannot be reused with a different payload.");
+      this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
+      this.sendGameState(socket, playerId);
+      return;
+    }
     if (this.wasProcessed(playerId, message.requestId)) {
+      if (isStarCommand) throw new GameRuleError("INVALID_COMMAND", "That request ID was already used.");
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
       return;
     }
@@ -621,6 +638,9 @@ export class RoomDurableObject extends DurableObject<Env> {
       const metadata = this.readMetadata();
       if (!metadata) return;
       const currentGame = this.readGame();
+      if (currentGame?.gameId === "star-garden" && !["setup", "gameResults"].includes(currentGame.state.phase)) {
+        throw new GameRuleError("INVALID_PHASE", "Finish this Star Garden run before returning to the arcade.");
+      }
       const cleanupAt = Date.now() + DRAWING_RETENTION_MS;
       this.ctx.storage.transactionSync(() => {
         this.writeMetadata({ ...metadata, roomPhase: "lobby", selectedGameId: null, lastActivityAt: Date.now() });
@@ -722,6 +742,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     command: GameCommand
   ): Promise<void> {
     await this.reconcileShirtFightDue(Date.now(), true);
+    await this.reconcileStarGardenDue(Date.now());
     const metadata = this.readMetadata();
     const game = this.readGame();
     if (!metadata || metadata.roomPhase !== "playing" || !game) {
@@ -731,7 +752,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     let nextGame: StoredGame;
     let scoreDelta: Readonly<Record<string, number>> = {};
     if (game.gameId !== "system-crawl") {
-      const result = bindGame(game).command(command, playerId, Date.now(), secureRandom);
+      const result = bindGame(game).command(command, playerId, Date.now(), secureRandom, this.readPlayers().some((p) => p.id === playerId && p.isHost));
       nextGame = result.state;
       scoreDelta = result.scoreDelta ?? {};
     } else {
@@ -756,7 +777,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       nextGame,
       scoreDelta,
       playerId,
-      requestId
+      requestId,
+      game.gameId === "star-garden" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined
     );
     this.send(socket, { type: "command.ack", requestId, payload: { accepted: true } });
     this.broadcast({ type: "room.presence", payload: this.roomView() });
@@ -901,6 +923,23 @@ export class RoomDurableObject extends DurableObject<Env> {
     this.writeAssetManifest({ entries: manifest.entries.map((entry) => entry.drawingId === drawingId ? update(entry) : entry) });
   }
 
+  private readStarGardenReceipts(): Array<{ playerId: string; requestId: string; payload: string }> {
+    const row = ([...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'star-garden-receipts'")] as unknown as StateRow[])[0];
+    return row ? JSON.parse(row.json_value) as Array<{ playerId: string; requestId: string; payload: string }> : [];
+  }
+
+  private async reconcileStarGardenDue(now: number): Promise<void> {
+    const game = this.readGame();
+    const metadata = this.readMetadata();
+    if (!metadata || metadata.expiredAt !== undefined || game?.gameId !== "star-garden") return;
+    const result = advanceStarGardenDue(game.state, now);
+    if (result.state === game.state) return;
+    this.persistGameMutation({ ...metadata, roomPhase: result.state.phase === "gameResults" ? "results" : "playing" }, { gameId: "star-garden", state: result.state }, result.scoreDelta);
+    this.broadcast({ type: "room.presence", payload: this.roomView() });
+    this.broadcastGameState();
+    await this.scheduleAlarm();
+  }
+
   private async reconcileShirtFightDue(now: number, shouldBroadcast: boolean): Promise<void> {
     for (let guard = 0; guard < 32; guard += 1) {
       const game = this.readGame();
@@ -988,7 +1027,8 @@ export class RoomDurableObject extends DurableObject<Env> {
     game: StoredGame,
     scoreDelta: Readonly<Record<string, number>> = {},
     actorPlayerId?: string,
-    requestId?: string
+    requestId?: string,
+    starGardenPayload?: string
   ): void {
     this.ctx.storage.transactionSync(() => {
       this.writeMetadata(metadata);
@@ -999,7 +1039,16 @@ export class RoomDurableObject extends DurableObject<Env> {
       for (const [scorePlayerId, points] of Object.entries(scoreDelta)) {
         this.sql.exec("UPDATE players SET score = score + ? WHERE id = ?", points, scorePlayerId);
       }
-      if (actorPlayerId !== undefined && requestId !== undefined) this.markProcessed(actorPlayerId, requestId);
+      if (actorPlayerId !== undefined && requestId !== undefined) {
+        this.markProcessed(actorPlayerId, requestId);
+        if (starGardenPayload !== undefined) {
+          const receipts = this.readStarGardenReceipts();
+          const own = receipts.filter((r) => r.playerId === actorPlayerId);
+          own.push({ playerId: actorPlayerId, requestId, payload: starGardenPayload });
+          const next = [...receipts.filter((r) => r.playerId !== actorPlayerId), ...own.slice(-RECENT_REQUEST_LIMIT)];
+          this.sql.exec("INSERT INTO room_state (key, json_value, updated_at) VALUES ('star-garden-receipts', ?, ?) ON CONFLICT(key) DO UPDATE SET json_value = excluded.json_value, updated_at = excluded.updated_at", JSON.stringify(next), Date.now());
+        }
+      }
     });
   }
 
@@ -1120,6 +1169,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       nextAlarm = Math.min(nextAlarm, host.disconnectedAt + HOST_GRACE_MS);
     }
     const game = this.readGame();
+    if (metadata.expiredAt === undefined && game?.gameId === "star-garden" && game.state.deadlineAt !== null) nextAlarm = Math.min(nextAlarm, game.state.deadlineAt);
     if (metadata.expiredAt === undefined && game?.gameId === "shirt-fight" && game.state.deadlineAt !== undefined) {
       let gameDue = game.state.deadlineAt;
       if (game.state.phase === "drawing" && gameDue <= Date.now()) {
