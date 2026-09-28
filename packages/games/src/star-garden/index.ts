@@ -173,7 +173,7 @@ export function starGardenStandings(state: StarGardenState): StarGardenStanding[
 }
 export function getStarGardenPublicView(state: StarGardenState): StarGardenPublicView {
   return { gameInstanceId: state.gameInstanceId, rulesVersion: state.rulesVersion, contentVersion: state.contentVersion, mode: state.mode, dailyDate: state.dailyDate, roundNumber: state.roundNumber, deadlineAt: state.deadlineAt,
-    roster: [...state.roster], goals: currentStarGardenGoals(state), readiness: Object.fromEntries(state.roster.map((id) => [id, state.players[id]!.done])), standings: starGardenStandings(state), history: structuredClone(state.history), endingReason: state.endingReason };
+    roster: [...state.roster], goals: currentStarGardenGoals(state), readiness: Object.fromEntries(state.roster.map((id) => [id, state.players[id]!.done])), standings: starGardenStandings(state), history: state.history.map((round) => ({ roundNumber: round.roundNumber, closedAt: round.closedAt, claims: state.roster.map((id): [string | null, number] => { const claim = round.claims.find((entry) => entry.playerId === id)!; return [claim.goalId, claim.points]; }) })), endingReason: state.endingReason };
 }
 export function getStarGardenPrivateView(state: StarGardenState, actor: string): StarGardenPrivateView {
   const p = state.players[actor];

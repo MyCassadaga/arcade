@@ -37,11 +37,13 @@ export type StarGardenCommand = z.infer<typeof starGardenCommandSchema>;
 export type StarGardenPhase = "setup" | "playing" | "reveal" | "gameResults";
 export interface StarGardenStanding { playerId: string; score: number; goals: number; actions: number; rank: number }
 export interface StarGardenRoundResult { roundNumber: number; closedAt: number; claims: Array<{ playerId: string; goalId: string | null; points: number }> }
+/** Claims are [goalId, points] tuples in frozen public roster order. */
+export interface StarGardenRoundView { roundNumber: number; closedAt: number; claims: Array<[string | null, number]> }
 export interface StarGardenPublicView {
   gameInstanceId: string; rulesVersion: "v1"; contentVersion: "v1"; mode: StarGardenMode | null;
   dailyDate: string | null; roundNumber: number; deadlineAt: number | null;
   roster: string[]; goals: StarGardenGoal[]; readiness: Record<string, boolean>;
-  standings: StarGardenStanding[]; history: StarGardenRoundResult[];
+  standings: StarGardenStanding[]; history: StarGardenRoundView[];
   endingReason: "all-goals" | "out-of-cards" | "ended" | "cup-complete" | null;
 }
 export interface StarGardenPrivateView {

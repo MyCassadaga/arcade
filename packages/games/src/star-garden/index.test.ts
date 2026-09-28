@@ -289,3 +289,29 @@ it("implements all five Scramble permutations and Mutation excludes each old kin
     expect(next.players.p0!.board[0]).not.toBe(old); expect(next.players.p0!.board.slice(1)).toEqual(s.players.p0!.board.slice(1));
   }
 });
+
+
+it("bounds the complete worst-case eight-seat Cup envelope and preserves reveal seat identity", () => {
+  const players = Array.from({ length: 8 }, (_, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, displayName: `Seat ${i}`, isHost: i === 0, connected: true, score: 0 }));
+  let state = createStarGardenState({ now, random: () => 0, players }, instance);
+  state = handleStarGardenCommand(state, { type: "starGarden.begin", ...identity(state, players[0]!.id), mode: "cup" }, players[0]!.id, now, true, "size").state;
+  // Upper bounds deliberately combine the longest content and all six histories,
+  // even in earlier phases, so the assertion covers every valid Cup projection.
+  const longest = <T,>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length)[0]!;
+  for (const tier of STAR_GARDEN_TIERS) state.lanes[tier] = Array<string>(10).fill(longest(STAR_GARDEN_GOALS.filter((g) => g.tier === tier)).id);
+  state.roundNumber = 6; state.deadlineAt = 8640000000000000; state.endingReason = "cup-complete";
+  for (const p of Object.values(state.players)) {
+    p.hand = Array.from({ length: 5 }, () => longest(starGardenDeck()));
+    p.score = 60; p.goalsClaimed = 6; p.actionsSpent = p.closedActions = 18; p.revision = 10000; p.pending = { goalId: "G30", points: 10 };
+  }
+  state.history = Array.from({ length: 6 }, (_, i) => ({ roundNumber: i + 1, closedAt: 8640000000000000, claims: [...players].reverse().map((p) => ({ playerId: p.id, goalId: `G${21 + players.indexOf(p)}`, points: 10 })) }));
+  for (const phase of ["playing", "reveal", "gameResults"] as const) {
+    state.phase = phase;
+    const publicView = getStarGardenPublicView(state);
+    publicView.history.forEach((round) => expect(round.claims).toEqual(players.map((_, seat) => [`G${21 + seat}`, 10])));
+    for (const player of players) {
+      const envelope = { type: "game.state", payload: { gameId: "star-garden", phase, public: publicView, private: getStarGardenPrivateView(state, player.id) } };
+      expect(new TextEncoder().encode(JSON.stringify(envelope)).length).toBeLessThanOrEqual(4096);
+    }
+  }
+});

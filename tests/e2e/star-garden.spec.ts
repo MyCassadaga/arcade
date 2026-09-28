@@ -36,7 +36,33 @@ async function tabTo(page: Page, text: string) {
   throw Error(`Could not tab to ${text}`);
 }
 
-test("Star Garden Daily: keyboard setup/tutorial, real run, previews/cancel, claim refresh/reconnect/share/replay at 320px and desktop", async ({ page, context }, testInfo) => {
+test("Star Garden Daily: keyboard setup/tutorial, real run, previews/cancel, claim refresh/reconnect/share/replay at 320px and desktop", async ({ page }, testInfo) => {
+  let dropNextCard = false, droppedAck = false, replayAck = false, lostCommand = "";
+  await page.routeWebSocket("**/api/rooms/*/socket", (socket) => {
+    const server = socket.connectToServer();
+    let suppress = false;
+    socket.onMessage((raw) => {
+      const message = JSON.parse(String(raw)) as { type: string; payload?: { command?: { type: string } } };
+      if (dropNextCard && message.payload?.command?.type === "starGarden.playCard") {
+        dropNextCard = false; suppress = true; lostCommand = String(raw);
+      }
+      server.send(raw);
+    });
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw)) as { type: string; requestId?: string };
+      const lostId = lostCommand ? (JSON.parse(lostCommand) as { requestId: string }).requestId : null;
+      if (suppress) {
+        // The real DO committed, but neither its snapshot nor ack reaches the browser.
+        if (message.type === "command.ack" && message.requestId === lostId) {
+          droppedAck = true; void socket.close({ code: 1012, reason: "Test lost acknowledgement" });
+          void server.close();
+        }
+      } else {
+        if (droppedAck && message.type === "command.ack" && message.requestId === lostId) replayAck = true;
+        socket.send(raw);
+      }
+    });
+  });
   await observe(page); await page.setViewportSize({ width: 320, height: 800 }); await page.goto("/");
   await page.getByRole("button", { name: "Play Star Garden solo" }).click();
   await expect(page.getByRole("heading", { name: "Your corner of the cosmos" })).toBeVisible();
@@ -80,12 +106,19 @@ test("Star Garden Daily: keyboard setup/tutorial, real run, previews/cancel, cla
   await page.setViewportSize({ width: 1280, height: 900 }); await page.getByRole("button", { name: "Daily Replay" }).click(); await page.getByRole("button", { name: "Begin", exact: true }).click();
   await expect(page.locator(".sg-header")).toContainText("Replay"); expect((await view(page)).private.board).toEqual(initial.private.board);
   const beforeLost = await selectFirstCard(page);
-  // Commit then close the socket before the acknowledgement can be relied upon.
+  dropNextCard = true;
   await page.getByRole("button", { name: "Confirm card" }).click();
-  await context.setOffline(true); await context.setOffline(false);
+  await expect.poll(() => droppedAck).toBe(true);
   await expect(page.locator(".connection-badge")).toContainText("Live", { timeout: 15000 });
+  await expect.poll(async () => (await view(page)).private.revision).toBe(beforeLost.private.revision + 1);
+  const committed = (await view(page)).private;
+  expect(committed.actionsSpent).toBe(beforeLost.private.actionsSpent + 1);
+  expect(committed.hand).toHaveLength(beforeLost.private.hand.length - 1);
+  await page.evaluate((command) => window.starGardenTestSocket!.send(command), lostCommand);
+  await expect.poll(() => replayAck).toBe(true);
+  expect((await view(page)).private).toEqual(committed);
   await page.reload(); await expect(page.getByRole("group", { name: "Your garden", exact: true })).toBeVisible();
-  expect((await view(page)).private.revision).toBeGreaterThanOrEqual(beforeLost.private.revision);
+  expect((await view(page)).private).toEqual(committed);
   await page.screenshot({ path: testInfo.outputPath("star-garden-desktop-replay.png"), fullPage: true });
   await page.getByRole("button", { name: "End Run", exact: true }).click(); await page.getByRole("button", { name: "Keep playing" }).click();
   await page.getByRole("button", { name: "End Run", exact: true }).click(); await page.getByRole("button", { name: "Confirm End Run" }).click();
