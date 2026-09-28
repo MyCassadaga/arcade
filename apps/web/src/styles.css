@@ -39,12 +39,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .feature-pills span { padding: .55rem .8rem; border: 1px solid #5c4d7c; border-radius: 999px; color: #ddd5ef; font-size: .82rem; }
 .entry-actions { display: grid; width: min(100%, 34rem); justify-self: end; gap: 1rem; }
 .entry-panel { width: 100%; padding: .65rem; border: 1px solid rgba(255,255,255,.22); border-radius: 30px; background: rgba(255,255,255,.08); box-shadow: 0 30px 70px rgba(0,0,0,.28); backdrop-filter: blur(18px); }
-.solo-panel { padding: 1.15rem; border: 1px solid rgba(255,255,255,.25); border-radius: 24px; background: rgba(19,13,42,.66); box-shadow: 0 18px 45px rgba(0,0,0,.2); backdrop-filter: blur(16px); }
-.solo-panel-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: .8rem; }
+.solo-panel { display: grid; gap: 14px; padding: 1.15rem; border: 1px solid rgba(255,255,255,.25); border-radius: 24px; background: rgba(19,13,42,.66); box-shadow: 0 18px 45px rgba(0,0,0,.2); backdrop-filter: blur(16px); }
+.solo-panel-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: 0; }
 .solo-panel-heading h2 { margin: 0; font: 900 1.55rem "Arial Black", Impact, sans-serif; }
 .solo-panel-heading > span { color: #d6cfea; font-size: .74rem; font-weight: 800; }
-.solo-game-card { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .85rem; align-items: center; padding: .85rem; border: 2px solid var(--lime); border-radius: 16px; background: #fff8e9; color: var(--ink); text-align: left; box-shadow: 4px 4px 0 var(--pink); transition: transform .15s, box-shadow .15s; }
-.solo-game-card:not(:disabled):hover { transform: translateY(-2px); box-shadow: 6px 6px 0 var(--pink); }
+.solo-game-card { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .85rem; align-items: center; padding: .85rem; border: 2px solid #ded3f3; border-radius: 16px; background: linear-gradient(120deg,#fffaf0,#eee6ff); color: var(--ink); text-align: left; box-shadow: 0 5px 0 #8561c4, 0 9px 18px #0004; transition: transform .15s, box-shadow .15s; }
+.solo-game-card:not(:disabled):hover { transform: translateY(-2px); border-color: var(--lime); box-shadow: 0 7px 0 #8561c4, 0 12px 22px #0005; }
 .solo-game-card:disabled { opacity: .72; }
 .solo-game-card > span:nth-child(2) { min-width: 0; }
 .solo-game-card strong, .solo-game-card small { display: block; }
@@ -97,7 +97,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .section-heading h2, .players-heading h2 { margin: 0; font: 800 clamp(1.8rem, 3vw, 2.5rem) "Arial Black", Impact, sans-serif; }
 .host-note { max-width: 15rem; color: #736b79; font-size: .82rem; text-align: right; }
 .game-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.game-card { position: relative; overflow: hidden; min-height: 25rem; padding: 2rem; border: 3px solid transparent; border-radius: 22px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; color: var(--ink); transition: transform .18s, box-shadow .18s; }
+.game-card { position: relative; overflow: hidden; min-height: 25rem; padding: 2rem; border: 3px solid #17112e33; box-shadow: 0 5px 0 #17112e22; border-radius: 22px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; color: var(--ink); transition: transform .18s, box-shadow .18s; }
 .game-card:not(:disabled):hover { transform: translateY(-5px) rotate(-.3deg); box-shadow: 0 12px 0 rgba(23, 17, 46, .16); }
 .game-card.selected { border-color: var(--ink); box-shadow: 7px 7px 0 var(--ink); }
 .game-card:disabled { opacity: .78; }
@@ -475,3 +475,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   .drawing-phase .form-error { grid-column: 1; grid-row: 2; }
   .drawing-phase > .phase-card > .primary-button { grid-column: 1; grid-row: 3; }
 }
+
+/* Shared picker affordances apply to every catalog entry. */
+.solo-game-card:not(:disabled):active,.game-card:not(:disabled):active { transform: translateY(2px); box-shadow: 0 1px 0 #17112e55; }
+.solo-game-card:focus-visible,.game-card:focus-visible { outline: 4px solid var(--lime); outline-offset: 4px; }
+.game-card:focus-visible { outline-color: #7657ff; }
+@media (prefers-reduced-motion:reduce) { .solo-game-card,.game-card { transition: none; }.solo-game-card:not(:disabled):hover,.game-card:not(:disabled):hover { transform: none; } }

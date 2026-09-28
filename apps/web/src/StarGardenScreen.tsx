@@ -2,15 +2,40 @@ import { useEffect, useRef, useState } from "react";
 import type { GameCommand, PlayerView, StarGardenEffect, StarGardenGoal, StarGardenMode, StarKind, TypedGameViewerState } from "@team-arcade/shared";
 import { STAR_GARDEN_ACTIONS, STAR_GARDEN_GOALS, matchStarGardenGoal, previewStarGardenAction, refillStars, starGardenMatches } from "@team-arcade/games/star-garden";
 import { readStarGardenHistory, recordStarGardenResult } from "./star-garden-history";
+import { ActionArt, CelestialPiece } from "./StarGardenArt";
 import "./star-garden.css";
 
 type View = Extract<TypedGameViewerState, { gameId: "star-garden" }>;
-interface Props { game: View; players: PlayerView[]; isHost: boolean; connected: boolean; commandPending: boolean; sendGame: (command: GameCommand) => boolean; playAgain: () => boolean; backToArcade: () => boolean }
+interface Props { game: View; players: PlayerView[]; isHost: boolean; connected: boolean; commandPending: boolean; sendGame: (command: GameCommand) => boolean; playAgain: () => boolean; backToArcade: () => boolean; changedCells?: number[] }
 const KINDS = [{ name: "gold circle", glyph: "●" }, { name: "teal diamond", glyph: "◆" }, { name: "pink triangle", glyph: "▲" }, { name: "violet crescent", glyph: "☾" }] as const;
 const MODE_NAMES = { daily: "Daily", practice: "Solo Practice", cup: "Constellation Cup" };
 export function StarGardenScreen(props: Props) {
   const { game, players, isHost, connected, commandPending, sendGame, playAgain, backToArcade } = props;
   const v = game.public, p = game.private;
+  const shell = useRef<HTMLDivElement>(null);
+  const focusWasInPlay = useRef(false);
+  const previous = useRef({ instance: v.gameInstanceId, player: p });
+  const [feedback, setFeedback] = useState({ message: "", cells: [] as number[] });
+  useEffect(() => {
+    const old = previous.current;
+    previous.current = { instance: v.gameInstanceId, player: p };
+    if (old.instance !== v.gameInstanceId) { setFeedback({ message: "", cells: [] }); return; }
+    if (old.player.revision === p.revision && old.player.score === p.score) return;
+    if (focusWasInPlay.current && document.activeElement === document.body) {
+      shell.current?.querySelector<HTMLButtonElement>(".sg-card-list button:not(:disabled), .sg-goal:not(:disabled), .sg-secondary button:not(:disabled), .sg-result button:not(:disabled)")?.focus({ preventScroll: true });
+    }
+    const spent = p.actionsSpent - old.player.actionsSpent;
+    const played = old.player.hand.find((c) => !p.hand.some((next) => next.id === c.id));
+    const points = p.score - old.player.score;
+    const message = points > 0 ? `+${points} points · constellation discovered` : spent >= 3 ? "Garden refreshed · 3 actions spent" : spent > 0 && played ? `${STAR_GARDEN_ACTIONS.find((a) => a.id === played.action)!.name} played · 1 action spent` : "";
+    // Feedback observes accepted, visible snapshots only; it never predicts a draw.
+    setFeedback({ message, cells: p.board.flatMap((kind, cell) => old.player.board[cell] !== kind ? [cell] : []) });
+  }, [v.gameInstanceId, p]);
+  useEffect(() => {
+    if (!feedback.message && !feedback.cells.length) return;
+    const timer = window.setTimeout(() => setFeedback({ message: "", cells: [] }), 1600);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
   const [mode, setMode] = useState<StarGardenMode>("daily");
   const [tutorial, setTutorial] = useState(false);
   const [share, setShare] = useState("");
@@ -32,7 +57,7 @@ export function StarGardenScreen(props: Props) {
     try { await navigator.clipboard.writeText(text); setCopyMessage("Copied!"); } catch { setCopyMessage("Select the text below and copy it manually."); }
   };
   const name = (id: string) => players.find((person) => person.id === id)?.displayName ?? "Player";
-  return <div className="sg-shell">
+  return <div ref={shell} onFocusCapture={(event) => { focusWasInPlay.current = Boolean((event.target as HTMLElement).closest(".sg-table")); }} className={`sg-shell ${game.phase !== "setup" ? "sg-active" : ""}`}>
     <header className="sg-header"><div><p className="sg-eyebrow">Team Arcade · a little room to wonder</p><h1>Star Garden <span aria-hidden="true">✦</span></h1><p>{v.mode ? MODE_NAMES[v.mode] : "Arrange. Discover. Let the stars flow."}{v.dailyDate && ` · ${v.dailyDate}`}{replay && " · Replay"} <small>v1</small></p></div>
       {v.mode === "cup" && <div className="sg-timer" aria-label={`Round ${v.roundNumber} of 6`}><strong>{v.roundNumber}<small>/6</small></strong><span>{game.phase === "gameResults" ? "Cup complete" : `${game.phase === "reveal" ? "Next round" : "Time left"} ${Math.max(0, Math.ceil(((v.deadlineAt ?? clock) - clock) / 1000))}s`}</span></div>}
     </header>
@@ -43,8 +68,8 @@ export function StarGardenScreen(props: Props) {
       {tutorial && <StarGardenTutorial />}
       {isHost && <button disabled={blocked} onClick={backToArcade}>Back to arcade</button>}
     </section> : <>
-      <div className="sg-stats" aria-label="Your progress"><span><strong>{p.score}</strong> points</span><span><strong>{p.goalsClaimed}</strong>/{v.mode === "cup" ? 6 : 30} constellations</span><span><strong>{p.actionsSpent}</strong> actions spent</span><span><strong>{p.hand.length}</strong>/5 cards{v.mode === "cup" && ` · ${p.remainingActions}/3 actions left`}</span></div>
-      {game.phase === "playing" && !p.done ? <StarGardenPlay key={`${v.gameInstanceId}:${p.revision}:${v.roundNumber}:${connected}`} {...props} /> : <>
+      <div className="sg-stats" aria-label="Your progress"><span><strong key={p.score} className="sg-score">{p.score}</strong> points</span><span><strong>{p.goalsClaimed}</strong>/{v.mode === "cup" ? 6 : 30}<span className="sg-stat-long"> constellations</span><span className="sg-stat-short"> goals</span></span><span><strong>{p.actionsSpent}</strong> <span className="sg-stat-long">actions spent</span><span className="sg-stat-short">actions</span></span><span><strong>{p.hand.length}</strong>/5 cards{v.mode === "cup" && ` · ${p.remainingActions}/3 actions left`}</span></div>
+      {game.phase === "playing" && !p.done ? <StarGardenPlay key={`${v.gameInstanceId}:${p.revision}:${v.roundNumber}:${connected}`} {...props} changedCells={feedback.cells} /> : <>
         {game.phase !== "gameResults" && <section className="sg-notice" role="status"><h2>{game.phase === "reveal" ? `Round ${v.roundNumber} revealed` : "You're Done"}</h2><p>{game.phase === "reveal" ? "Take a breath. The next sky is on its way." : "Your garden is saved. Waiting for the round to close."}</p></section>}
         <StarBoard board={p.board} label="Your saved garden" />
       </>}
@@ -57,11 +82,12 @@ export function StarGardenScreen(props: Props) {
         {isHost && <div className="sg-controls"><button className="sg-primary" disabled={blocked} onClick={() => { setMode("daily"); setShare(""); playAgain(); }}>{v.mode === "cup" ? "Play another Cup" : v.mode === "daily" ? "Daily Replay" : "Play Daily"}</button>{v.mode !== "cup" && <button disabled={blocked} onClick={() => { setMode("practice"); setShare(""); playAgain(); }}>New Practice</button>}<button disabled={blocked} onClick={backToArcade}>Back to arcade</button></div>}
       </section>}
     </>}
+    <div className="sg-feedback" role="status" aria-live="polite">{feedback.message}</div>
     <StarGardenReference />
   </div>;
 }
 
-function StarGardenPlay({ game, connected, commandPending, sendGame }: Props) {
+function StarGardenPlay({ game, connected, commandPending, sendGame, changedCells = [] }: Props) {
   const p = game.private, v = game.public;
   const [cardId, setCardId] = useState<string | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
@@ -73,6 +99,7 @@ function StarGardenPlay({ game, connected, commandPending, sendGame }: Props) {
   const [rotation, setRotation] = useState<"clockwise" | "counterclockwise">("clockwise");
   const [permutation, setPermutation] = useState<[number, number, number]>([1, 0, 2]);
   const [endConfirm, setEndConfirm] = useState(false);
+  const table = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
   useEffect(() => { if (!commandPending) lock.current = false; }, [commandPending]);
   const blocked = commandPending || !connected;
@@ -108,36 +135,52 @@ function StarGardenPlay({ game, connected, commandPending, sendGame }: Props) {
   } catch (error) { effect = null; preview = null; reason = error instanceof Error ? error.message : "Choose valid targets."; }
   const identity = { gameInstanceId: v.gameInstanceId, roundNumber: v.roundNumber, expectedRevision: p.revision };
   const commit = (command: GameCommand) => { if (blocked || lock.current) return; lock.current = true; if (!sendGame(command)) lock.current = false; };
+  const cancel = () => {
+    const target = table.current?.querySelector<HTMLButtonElement>(".sg-goal[aria-pressed=true], .sg-card-list button[aria-pressed=true], .sg-secondary button:not(:disabled)");
+    reset(); target?.focus({ preventScroll: true });
+  };
   const confirm = () => {
     if (card && effect) commit({ type: "starGarden.playCard", ...identity, cardId: card.id, effect });
     else if (goal && origin !== null) commit({ type: "starGarden.claimGoal", ...identity, goalId: goal.id, origin });
     else if (refresh && discard.length === 3) commit({ type: "starGarden.refresh", ...identity, cardIds: discard as [string, string, string] });
   };
   const selectedCells = goal && origin !== null ? matchStarGardenGoal(p.board, goal, origin) ?? [] : selected;
-  return <>
-    <section className="sg-objectives" aria-label="Available constellations">{v.goals.map((g) => { const matches = starGardenMatches(p.board, g); return <button key={g.id} className={`sg-goal ${goalId === g.id ? "sg-selected" : ""}`} disabled={blocked || matches.length === 0} aria-pressed={goalId === g.id} onClick={() => { reset(); setGoalId(g.id); setOrigin(matches[0]!); }} aria-label={`${g.name}, ${g.points} points, ${matches.length} matching origins`}><span className="sg-goal-top">{g.tier}<b>{g.points} pts</b></span><Constellation goal={g} /><strong>{g.name}</strong><small>{matches.length ? `${matches.length} match${matches.length === 1 ? "" : "es"} · choose` : "No match yet"}</small></button>; })}</section>
-    <p className="sg-pattern-key">Same letter = same kind · A and B differ · dots don’t matter · fixed orientation</p>
-    {goal && <div className="sg-origins" aria-label="Choose matching origin">{starGardenMatches(p.board, goal).map((o) => <button key={o} disabled={blocked} aria-pressed={origin === o} onClick={() => setOrigin(o)}>Origin row {Math.floor(o / 5) + 1} column {o % 5 + 1}</button>)}</div>}
-    <div className="sg-garden"><div className="sg-section-heading"><h2>Your garden</h2><span>Flow → then ←</span></div><StarBoard board={p.board} label="Your garden" selected={selectedCells} disabled={blocked || !card} onSelect={(cell) => { const two = ["exchange", "blink", "echo"].includes(card?.action ?? ""); setSelected((old) => old.includes(cell) ? old.filter((c) => c !== cell) : two && old.length === 1 ? [...old, cell] : [cell]); }} /></div>
-    <section className="sg-hand" aria-label="Your hand"><div className="sg-section-heading"><h2>Your cards</h2><span>Play one · no automatic draw</span></div><div className="sg-card-list">{p.hand.map((c) => <button key={c.id} aria-label={`${STAR_GARDEN_ACTIONS.find((a) => a.id === c.action)!.name} 1 action${refresh && discard.includes(c.id) ? `, discard ${discard.indexOf(c.id) + 1}` : ""}`} disabled={blocked || (!refresh && v.mode === "cup" && p.remainingActions === 0)} aria-pressed={refresh ? discard.includes(c.id) : cardId === c.id} onClick={() => { if (refresh) setDiscard((old) => old.includes(c.id) ? old.filter((id) => id !== c.id) : old.length < 3 ? [...old, c.id] : old); else { reset(); setCardId(c.id); } }}><span aria-hidden="true">{c.action === "spin" ? "↻" : c.action === "mirror" ? "↔" : c.action === "collapse" ? "↓" : "✧"}</span><strong>{STAR_GARDEN_ACTIONS.find((a) => a.id === c.action)!.name}</strong><small>{refresh && discard.includes(c.id) ? `Discard ${discard.indexOf(c.id) + 1}` : "1 action"}</small></button>)}</div>{!p.hand.length && <p>No cards left. You can still claim any matching constellation.</p>}</section>
-    {(card || goal || refresh) && <section className="sg-preview"><h2>{action?.name ?? (goal ? `Claim ${goal.name}` : "Refresh")}</h2>{action && <p>{action.description}</p>}
+  return <div ref={table} className="sg-table">
+    <div className="sg-sky">
+    <section className="sg-objectives" aria-label="Available constellations">{v.goals.map((g) => { const matches = starGardenMatches(p.board, g); return <button key={g.id} className={`sg-goal sg-tier-${g.tier} ${matches.length ? "sg-matchable" : ""} ${goalId === g.id ? "sg-selected" : ""}`} disabled={blocked || matches.length === 0} aria-pressed={goalId === g.id} onClick={() => { reset(); setGoalId(g.id); setOrigin(matches[0]!); }} aria-label={`${g.name}, ${g.points} points, ${matches.length} matching origins`}><span className="sg-goal-top">{g.tier}<b>{g.points} pts</b></span><Constellation goal={g} /><strong>{g.name}</strong><small>{goalId === g.id ? "Selected" : matches.length ? `✧ ${matches.length} match${matches.length === 1 ? "" : "es"}` : "No match yet"}</small></button>; })}</section>
+    <details className="sg-pattern-key"><summary>Pattern key <span>A ≠ B · fixed orientation</span></summary><p>Same letter = same kind. A and B differ. Dots don’t matter. Orientation is fixed.</p></details>
+
+    <div className="sg-garden"><div className="sg-section-heading"><h2>Your garden</h2><span>Flow → then ←</span></div><StarBoard board={p.board} label="Your garden" changedCells={changedCells} selected={selectedCells} disabled={blocked || !card} onSelect={(cell) => { const two = ["exchange", "blink", "echo"].includes(card?.action ?? ""); setSelected((old) => old.includes(cell) ? old.filter((c) => c !== cell) : two && old.length === 1 ? [...old, cell] : [cell]); }} /></div>
+    {goal && <div className="sg-origins" aria-label="Choose matching origin">{starGardenMatches(p.board, goal).map((o) => <button key={o} aria-label={`Origin row ${Math.floor(o / 5) + 1} column ${o % 5 + 1}`} disabled={blocked} aria-pressed={origin === o} onClick={() => setOrigin(o)}>R{Math.floor(o / 5) + 1} · C{o % 5 + 1}</button>)}</div>}
+    </div><div className="sg-console">
+    <section className="sg-hand" aria-label="Your hand"><div className="sg-section-heading"><h2>Your cards</h2><span>Play one · no automatic draw</span></div><div className="sg-card-list" onFocus={(event) => {
+      // A partially visible focused card must be fully readable, including its ring.
+      // Scroll only the deck, so confirmation focus recovery never moves the page.
+      const card = (event.target as HTMLElement).closest("button");
+      if (!card) return;
+      const deck = event.currentTarget, frame = deck.getBoundingClientRect(), target = card.getBoundingClientRect();
+      if (target.right > frame.right - 4) deck.scrollLeft += target.right - frame.right + 4;
+      else if (target.left < frame.left + 4) deck.scrollLeft -= frame.left - target.left + 4;
+    }}>{p.hand.map((c) => <button key={c.id} aria-label={`${STAR_GARDEN_ACTIONS.find((a) => a.id === c.action)!.name} 1 action${refresh && discard.includes(c.id) ? `, discard ${discard.indexOf(c.id) + 1}` : ""}`} disabled={blocked || (!refresh && v.mode === "cup" && p.remainingActions === 0)} aria-pressed={refresh ? discard.includes(c.id) : cardId === c.id} onClick={() => { if (refresh) setDiscard((old) => old.includes(c.id) ? old.filter((id) => id !== c.id) : old.length < 3 ? [...old, c.id] : old); else { reset(); setCardId(c.id); } }}><ActionArt action={c.action} /><strong>{STAR_GARDEN_ACTIONS.find((a) => a.id === c.action)!.name}</strong><small>{refresh && discard.includes(c.id) ? `Discard ${discard.indexOf(c.id) + 1}` : "1 action"}</small></button>)}</div>{!p.hand.length && <p>No cards left. You can still claim any matching constellation.</p>}</section>
+    {(card || goal || refresh) && <section className="sg-preview" aria-label="Selected move">{action ? <details className="sg-action-help"><summary><strong>{action.name}</strong><span>Card details</span></summary><p>{action.description}</p></details> : <h2>{goal ? `Claim ${goal.name}` : "Refresh"}</h2>}
       {card?.action === "spin" && <label>Rotation<select value={rotation} onChange={(e) => setRotation(e.target.value as typeof rotation)}><option value="clockwise">Clockwise ↻</option><option value="counterclockwise">Counterclockwise ↺</option></select></label>}
       {card && ["drift", "crosswind"].includes(card.action) && <label>{card.action === "crosswind" ? "Top row direction" : "Direction"}<select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}><option value="left">Left ←</option><option value="right">Right →</option></select></label>}
       {card?.action === "scramble" && <label>New order of the three positions<select value={permutation.join(",")} onChange={(e) => setPermutation(e.target.value.split(",").map(Number) as [number, number, number])}>{[[0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]].map((order) => <option key={order.join()} value={order.join()}>{order.map((n) => n + 1).join(" → ")}</option>)}</select></label>}
       <p role="status">{reason}</p>{preview && <StarBoard board={preview} label="Preview, not committed" />}
-      <div className="sg-controls"><button className="sg-primary" disabled={blocked || !preview || (v.mode === "cup" && !goal && p.remainingActions < (refresh ? 3 : 1))} onClick={confirm}>Confirm {goal ? "claim" : refresh ? "Refresh" : "card"}</button><button disabled={blocked} onClick={reset}>Cancel</button></div>
+      <div className="sg-controls"><button className="sg-primary" disabled={blocked || !preview || (v.mode === "cup" && !goal && p.remainingActions < (refresh ? 3 : 1))} onClick={confirm}>Confirm {goal ? "claim" : refresh ? "Refresh" : "card"}</button><button disabled={blocked} onClick={cancel}>Cancel</button></div>
     </section>}
     <div className="sg-controls sg-secondary"><button disabled={blocked || p.hand.length < 3 || (v.mode === "cup" && p.remainingActions < 3)} onClick={() => { reset(); setRefresh(true); }}>Refresh · discard 3</button>{v.mode === "cup" ? <button disabled={blocked} onClick={() => commit({ type: "starGarden.doneRound", ...identity })}>Done · no claim</button> : <button disabled={blocked} onClick={() => setEndConfirm(true)}>End Run</button>}</div>
     {endConfirm && <section className="sg-notice" role="group" aria-label="End Run confirmation"><p>End this run and keep your current result?</p><button disabled={blocked} onClick={() => commit({ type: "starGarden.endRun", ...identity })}>Confirm End Run</button><button onClick={() => setEndConfirm(false)}>Keep playing</button></section>}
-  </>;
+    </div>
+  </div>;
 }
-export function StarBoard({ board, label, selected = [], disabled = true, onSelect }: { board: readonly (StarKind | null)[]; label: string; selected?: number[]; disabled?: boolean; onSelect?: (cell: number) => void }) {
-  return <div className="sg-board" role="group" aria-label={label}>{board.map((kind, cell) => <button key={cell} className={`sg-star sg-kind-${kind ?? "unknown"} ${selected.includes(cell) ? "sg-selected" : ""}`} aria-label={`Row ${Math.floor(cell / 5) + 1} column ${cell % 5 + 1}: ${kind === null ? "unknown new star" : KINDS[kind].name}`} aria-pressed={selected.includes(cell)} disabled={disabled} onClick={() => onSelect?.(cell)}><svg viewBox="0 0 60 60" aria-hidden="true"><path d="M30 3L37 20L55 15L45 31L56 46L37 43L30 58L23 43L4 46L15 31L5 15L23 20Z" /><text x="30" y="36" textAnchor="middle">{kind === null ? "?" : KINDS[kind].glyph}</text></svg></button>)}</div>;
+export function StarBoard({ board, label, selected = [], changedCells = [], disabled = true, onSelect }: { board: readonly (StarKind | null)[]; label: string; selected?: number[]; changedCells?: number[]; disabled?: boolean; onSelect?: (cell: number) => void }) {
+  return <div className="sg-board" role="group" aria-label={label}>{board.map((kind, cell) => <button key={cell} className={`sg-star sg-kind-${kind ?? "unknown"} ${selected.includes(cell) ? "sg-selected" : ""} ${changedCells.includes(cell) ? "sg-changed" : ""}`} aria-label={`Row ${Math.floor(cell / 5) + 1} column ${cell % 5 + 1}: ${kind === null ? "unknown new star" : KINDS[kind].name}`} aria-pressed={selected.includes(cell)} disabled={disabled} onClick={() => onSelect?.(cell)}><CelestialPiece kind={kind} /></button>)}</div>;
 }
 function Constellation({ goal }: { goal: StarGardenGoal }) {
   const rows = goal.pattern.split("/"), width = rows[0]!.length;
   const points = rows.flatMap((row, r) => [...row].flatMap((letter, c) => letter === "." ? [] : [{ x: 14 + c * 25, y: 18 + r * 30, letter }]));
-  return <svg className="sg-constellation" viewBox={`0 0 ${width * 25 + 3} 66`} role="img" aria-label={`${goal.name}: ${goal.pattern}. Same letters same kind, different letters different kinds; dots unconstrained, fixed orientation.`}><polyline points={points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="1" opacity=".5" />{rows.flatMap((row, r) => [...row].map((letter, c) => <g key={`${r}-${c}`}><circle cx={14 + c * 25} cy={18 + r * 30} r={letter === "." ? 1.5 : 9} fill={letter === "." ? "#a8a1bb" : "#e6def5"} /><text x={14 + c * 25} y={22 + r * 30} textAnchor="middle" fill="#201a33" fontSize="11" fontWeight="800">{letter === "." ? "" : letter}</text></g>))}</svg>;
+  return <svg className="sg-constellation" viewBox={`0 0 ${width * 25 + 3} 66`} role="img" aria-label={`${goal.name}: ${goal.pattern}. Same letters same kind, different letters different kinds; dots unconstrained, fixed orientation.`}><polyline points={points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="1" className="sg-constellation-line" />{rows.flatMap((row, r) => [...row].map((letter, c) => <g key={`${r}-${c}`}><circle cx={14 + c * 25} cy={18 + r * 30} className={letter === "." ? "sg-dot" : `sg-node sg-node-${letter}`} r={letter === "." ? 1.8 : 9} fill={letter === "." ? "#a8a1bb" : "#e6def5"} /><text x={14 + c * 25} y={22 + r * 30} textAnchor="middle" fill="#201a33" fontSize="11" fontWeight="800">{letter === "." ? "" : letter}</text></g>))}</svg>;
 }
 function StarGardenReference() { return <details className="sg-reference"><summary>How to play · card reference</summary><p>Same letter = same kind. Different letters = different kinds. Dots don't matter. Orientation is fixed: translate, never rotate or reflect. Only letter cells leave when you claim. Extra stars are fine.</p><p>Stars flow along the top row left to right, then the bottom right to left. Survivors keep their order at the downstream end. New stars enter upstream. Gold ●, teal ◆, pink ▲, violet ☾ are mechanically equivalent.</p><p>Solo claims draw up to two cards, to a maximum of five. Playing a card never draws a replacement. Empty hand? Claim if you can. Cup allows three actions and one claim per round; claiming ends your round. Otherwise press Done. A timeout scores zero and keeps your board changes. Everyone may claim the same goal.</p><dl>{STAR_GARDEN_ACTIONS.map((action) => <div key={action.id}><dt>{action.name} · {action.copies} copies</dt><dd>{action.description}</dd></div>)}<div><dt>Refresh · not a card</dt><dd>Discard exactly three cards; replace all ten stars. Costs three actions. No points or replacement cards.</dd></div></dl><p>A legal move that leaves colors unchanged still spends its card. Preview freely; committed actions cannot be undone. Daily uses a frozen server UTC date. Replays and first/best results are local convenience history, not verified global rankings.</p></details>; }
 function StarGardenTutorial() {

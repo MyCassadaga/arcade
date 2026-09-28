@@ -69,3 +69,21 @@ it("keeps disconnected controls disabled and never sends a command", () => {
   for (const button of within(screen.getByRole("region", { name: "Your hand" })).getAllByRole("button")) expect(button).toBeDisabled();
   expect(sendGame).not.toHaveBeenCalled();
 });
+
+it("shows move feedback only after an authoritative revision and restores keyboard focus", async () => {
+  const s = start(); s.players.p!.hand = [{ id: "mutation-1", action: "mutation" }, { id: "exchange-1", action: "exchange" }];
+  const sendGame = vi.fn(() => true), user = userEvent.setup();
+  const props = { players, isHost: true, connected: true, commandPending: false, sendGame, playAgain: () => true, backToArcade: () => true };
+  const game = (state: StarGardenState) => ({ gameId: "star-garden" as const, phase: state.phase, public: getStarGardenPublicView(state), private: getStarGardenPrivateView(state, "p") });
+  const { rerender } = render(<StarGardenScreen {...props} game={game(s)} />);
+  await user.click(screen.getByRole("button", { name: "Mutation 1 action" }));
+  await user.click(within(screen.getByRole("group", { name: "Your garden" })).getByRole("button", { name: /Row 1 column 1/ }));
+  const confirm = screen.getByRole("button", { name: "Confirm card" }); confirm.focus(); await user.keyboard("{Enter}");
+  expect(screen.queryByText("Mutation played · 1 action spent")).not.toBeInTheDocument();
+  const accepted = handleStarGardenCommand(s, { type: "starGarden.playCard", gameInstanceId: id, roundNumber: 0, expectedRevision: s.players.p!.revision, cardId: "mutation-1", effect: { action: "mutation", target: 0 } }, "p", Date.UTC(2026, 8, 28), true, "seed").state;
+  rerender(<StarGardenScreen {...props} game={game(accepted)} />);
+  expect(await screen.findByText("Mutation played · 1 action spent")).toBeVisible();
+  expect(document.activeElement).not.toBe(document.body);
+  expect(within(screen.getByRole("group", { name: "Your garden" })).getAllByRole("button")[0]).toHaveClass("sg-changed");
+  expect(sendGame).toHaveBeenCalledTimes(1);
+});
