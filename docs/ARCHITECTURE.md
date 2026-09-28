@@ -29,7 +29,7 @@ Owns:
 - WebSocket connection/reconnection behavior;
 - optimistic affordances only when they cannot affect authoritative outcome.
 
-The main page launches catalogued single-player games without room ceremony. For multiplayer rooms, the client stores the opaque session under the room-keyed local-storage key plus one room-code-only resume pointer. Reloading the room URL or returning to the root route validates that saved token before restoring the same seat; explicit Leave or a terminal invalid/expired response clears the token, pointer, and any private local Shirt Fight draft. A recoverable validation failure preserves the saved session and offers retry. For AFTERPRINT, the client creates the existing one-player room internally and stores only a game-to-room-code pointer alongside the established session. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
+The main page launches catalogued single-player games without room ceremony. For multiplayer rooms, the client stores the opaque session under the room-keyed local-storage key plus one room-code-only resume pointer. Reloading the room URL or returning to the root route validates that saved token before restoring the same seat; explicit Leave or a terminal invalid/expired response clears the token, pointer, and any private local Shirt Fight draft. A recoverable validation failure preserves the saved session and offers retry. For AFTERPRINT and Star Garden, the client creates the existing one-player room internally and stores only a game-to-room-code pointer alongside the established session. Once validated, the client derives idempotent select/start commands from authoritative room snapshots using stable request IDs. The solo presentation is active before connection, so room code, invite, lobby-picker, player-list, and waiting-for-players UI are never rendered.
 
 An open authenticated client sends no periodic heartbeat or state-refresh traffic. A one-shot local deadline is reset only by intentional outbound room/game commands. After 15 minutes without such activity, the socket closes, automatic reconnect remains paused, and the saved session is retained behind an explicit reconnect action.
 
@@ -65,7 +65,7 @@ Owns:
 
 ### Party-game registry and presentation
 
-`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, Categories, AFTERPRINT, and Shirt Fight. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; new games add discriminants without changing SQLite tables.
+`apps/worker/src/game-registry.ts` binds typed adapters for Who Said That?, Impostor, Categories, AFTERPRINT, Shirt Fight, and Star Garden. Each adapter creates a discriminated stored game, validates its command family, advances its pure engine, and projects the viewer state. The Durable Object keeps the existing authorization, request deduplication and atomic persistence boundary. Existing stored game JSON shapes are unchanged; new games add discriminants without changing SQLite tables.
 
 System Crawl stays hidden and uses its existing separate routing; it is outside this refactor.
 
@@ -164,3 +164,11 @@ Hidden game data never enters generic public room snapshots.
 ## D1 decision
 
 D1 is intentionally not required for MVP. Room state belongs in each Durable Object's local SQLite storage. Add D1 later only for true cross-room concerns such as global prompt administration, aggregate analytics, or persistent accounts.
+
+### Star Garden
+
+`packages/games/src/star-garden` owns frozen v1 content, matching, flow, deterministic streams and solo/Cup transitions. `StarGardenScreen` shares safe matching/action transforms, shows unknown random previews, and keeps tutorial/history separate from authoritative play. One catalog entry supports direct solo launch and room Cup. Existing start creates setup; current-host Begin freezes mode and all persisted seats, including disconnected ones.
+
+The additive stored-game discriminant retains versions, shuffled lanes, per-seat independent streams/decks/cursors/revisions and bounded six-round history. The registry passes current host authority and trusted server time/seed material. Cup projection exposes only readiness/completed standings publicly, with owner-only board/hand/budget. Pending points enter room scores only at atomic round closure.
+
+The DO reconciles scheduled Star Garden deadlines before commands/reconnects and in its existing alarm, persisting due state/deltas independently of a subsequently rejected late command. Reconnect rereads metadata after reconciliation. Scheduler minima retain inactivity/failover/expiry/asset cleanup. Bounded payload receipts use another key in the existing room_state table, committed alongside state/scores/request IDs; payload replay checks precede revision validation. Other games' JSON and legacy receipt behavior are preserved. See [Star Garden rules](GAME_SPEC_STAR_GARDEN.md).

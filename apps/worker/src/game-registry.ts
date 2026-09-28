@@ -1,3 +1,5 @@
+import { createStarGardenState, handleStarGardenCommand, getStarGardenPublicView, getStarGardenPrivateView, type StarGardenState } from "@team-arcade/games";
+import { starGardenCommandSchema } from "@team-arcade/shared";
 import { GameRuleError } from "@team-arcade/game-core";
 import type { GameContext, GameResult, ViewerContext } from "@team-arcade/game-core";
 import {
@@ -18,6 +20,7 @@ import {
 import type { z } from "zod";
 
 interface PartyStates {
+  "star-garden": StarGardenState;
   "who-said-that": WhoSaidThatState;
   impostor: ImpostorState;
   categories: CategoriesState;
@@ -29,7 +32,7 @@ export type StoredPartyGame = { [K in PartyGameId]: { gameId: K; state: PartySta
 type PartyView = Exclude<TypedGameViewerState, { gameId: "system-crawl" }>;
 
 interface BoundAdapter {
-  command(command: GameCommand, actorPlayerId: string, now: number, random: () => number): GameResult<StoredPartyGame>;
+  command(command: GameCommand, actorPlayerId: string, now: number, random: () => number, isHost?: boolean): GameResult<StoredPartyGame>;
   advance(now: number, random: () => number): GameResult<StoredPartyGame>;
   project(viewer: ViewerContext): PartyView;
 }
@@ -39,7 +42,7 @@ interface BoundAdapter {
 function adapter<S, C>(definition: {
   create(context: GameContext): S;
   schema: z.ZodType<C>;
-  command(state: S, command: C, actor: string, now: number, random: () => number): GameResult<S>;
+  command(state: S, command: C, actor: string, now: number, random: () => number, isHost: boolean): GameResult<S>;
   advance(state: S, random: () => number, now: number): GameResult<S>;
   store(state: S): StoredPartyGame;
   project(state: S, viewer: ViewerContext): PartyView;
@@ -50,10 +53,10 @@ function adapter<S, C>(definition: {
   return {
     create: (context: GameContext) => definition.store(definition.create(context)),
     bind: (state: S): BoundAdapter => ({
-      command(command, actor, now, random) {
+      command(command, actor, now, random, isHost = false) {
         const parsed = definition.schema.safeParse(command);
         if (!parsed.success) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
-        return wrap(definition.command(state, parsed.data, actor, now, random));
+        return wrap(definition.command(state, parsed.data, actor, now, random, isHost));
       },
       advance: (now, random) => wrap(definition.advance(state, random, now)),
       project: (viewer) => definition.project(state, viewer)
@@ -62,6 +65,13 @@ function adapter<S, C>(definition: {
 }
 
 export const GAME_REGISTRY = {
+  "star-garden": adapter({
+    create: (context) => createStarGardenState(context, crypto.randomUUID()), schema: starGardenCommandSchema,
+    command: (state, command, actor, now, _random, isHost) => handleStarGardenCommand(state, command, actor, now, isHost, command.type === "starGarden.begin" ? crypto.randomUUID() : ""),
+    advance: () => { throw new GameRuleError("INVALID_PHASE", "Star Garden advances through player actions and deadlines."); },
+    store: (state) => ({ gameId: "star-garden", state }),
+    project: (state, viewer) => ({ gameId: "star-garden", phase: state.phase, public: getStarGardenPublicView(state), private: getStarGardenPrivateView(state, viewer.playerId) })
+  }),
   "who-said-that": adapter({
     create: createWhoSaidThatState, schema: whoSaidThatCommandSchema,
     command: (state, command, actor, _now, random) => handleWhoSaidThatCommand(state, command, actor, random), advance: advanceWhoSaidThat,
@@ -106,6 +116,7 @@ export function isRegisteredGame(id: string): id is PartyGameId {
 
 export function bindGame(game: StoredPartyGame): BoundAdapter {
   switch (game.gameId) {
+    case "star-garden": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "who-said-that": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "impostor": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "categories": return GAME_REGISTRY[game.gameId].bind(game.state);

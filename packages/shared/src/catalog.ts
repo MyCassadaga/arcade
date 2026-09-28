@@ -49,6 +49,7 @@ export const GAME_CATALOG = [
     playMode: "room",
     availability: "public"
   },
+  { id: "star-garden", name: "Star Garden", description: "Arrange the stars. Discover constellations. Play solo or compete in the Cup.", duration: "5–10 min", playerRange: "1–8 players", icon: "stars", playMode: "single-player", availability: "public" },
   {
     id: "system-crawl",
     name: "System Crawl",

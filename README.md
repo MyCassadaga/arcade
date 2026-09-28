@@ -11,6 +11,7 @@ Public arcade games:
 2. **Impostor** — everyone except one player knows a secret word; players submit clues, vote, and the impostor may attempt to steal the round by guessing the word.
 3. **Categories** — five rounds for 2–12 players; exact normalized duplicates cancel and unique answers earn a point. See [game rules](docs/GAME_SPEC_CATEGORIES.md).
 4. **AFTERPRINT** — a one-player daily puzzle about reconstructing five events from their final 5×5 trace. See [game rules](docs/GAME_SPEC_AFTERPRINT.md).
+5. **Star Garden** — arrange stars and claim constellations in Solo Practice, UTC Daily, or the simultaneous 2–8-player Constellation Cup. See [game rules](docs/GAME_SPEC_STAR_GARDEN.md).
 
 System Crawl remains implemented, tested, and supported by the catalog, protocol, and Worker, but its catalog entry is hidden from the normal public game picker. It can be restored later by changing its explicit catalog availability.
 

@@ -9,7 +9,8 @@
     "./impostor": "./src/impostor/index.ts",
     "./afterprint": "./src/afterprint/simulator.ts",
     "./afterprint/puzzles": "./src/afterprint/puzzles.ts",
-    "./system-crawl": "./src/system-crawl/index.ts"
+    "./system-crawl": "./src/system-crawl/index.ts",
+    "./star-garden": "./src/star-garden/index.ts"
   },
   "dependencies": {
     "@team-arcade/game-core": "0.1.0",
