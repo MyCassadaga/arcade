@@ -165,7 +165,13 @@ test("Star Garden controlled browser fixture: keyboard multiple origins, claim/r
   const instance = "00000000-0000-4000-8000-000000000031";
   let state = createStarGardenState({ players: [player], now: Date.now(), random: () => 0 }, instance);
   state = handleStarGardenCommand(state, { type: "starGarden.begin", gameInstanceId: instance, roundNumber: 0, expectedRevision: 0, mode: "daily" }, player.id, Date.UTC(2026, 8, 28), true, "fixture").state;
-  state.players.fixture!.board.fill(0); state.lanes.easy = ["G01", ...state.lanes.easy.filter((id) => id !== "G01")];
+  state.players.fixture!.board.fill(0); state.players.fixture!.hand = [
+    { id: "crosswind-visual", action: "crosswind" },
+    { id: "drift-visual", action: "drift" },
+    { id: "mirror-visual", action: "mirror" },
+    { id: "spin-visual", action: "spin" },
+    { id: "mutation-visual", action: "mutation" }
+  ]; state.lanes.easy = ["G01", ...state.lanes.easy.filter((id) => id !== "G01")];
   const session = { roomCode: "ABCDE", playerId: player.id, sessionToken: "f".repeat(43) };
   await page.route("**/api/rooms", (route) => route.fulfill({ json: session, status: 201 }));
   await page.route("**/api/rooms/ABCDE/session", (route) => route.fulfill({ json: { valid: true } }));
@@ -184,10 +190,18 @@ test("Star Garden controlled browser fixture: keyboard multiple origins, claim/r
   const ember = page.getByRole("button", { name: "Ember, 2 points, 6 matching origins" }); await expect(ember).toBeVisible();
   await ember.focus(); await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Origin row 2 column 3" }).focus(); await page.keyboard.press("Enter");
+  await expect(page.getByRole("img", { name: /Claim preview refill: stars follow the permanent path; unknown stars enter upstream/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("star-garden-mobile-claim-preview.png"), fullPage: true });
   await page.getByRole("button", { name: "Confirm claim" }).focus(); await page.keyboard.press("Enter");
   await expect(page.locator(".sg-stats")).toContainText("2 points"); const claimed = structuredClone(state.players.fixture);
   await page.reload(); await expect(page.locator(".sg-stats")).toContainText("2 points"); expect(state.players.fixture).toEqual(claimed);
+  await page.getByRole("button", { name: "Crosswind 1 action" }).click();
+  await page.getByLabel("Top row direction").selectOption("left");
+  await page.getByRole("group", { name: "Your garden", exact: true }).getByRole("button").first().click();
+  await expect(page.getByRole("img", { name: /Crosswind preview: top row moves left; bottom row moves right.*wrap/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("star-garden-mobile-crosswind-preview.png"), fullPage: true });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("img", { name: /Crosswind preview/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Refresh · discard 3" }).click();
   for (let i = 0; i < 3; i++) await page.locator(".sg-card-list button").nth(i).click();
   await expect(page.getByRole("group", { name: "Preview, not committed" }).getByRole("button", { name: /unknown new star/ })).toHaveCount(10);

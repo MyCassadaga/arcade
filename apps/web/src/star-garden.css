@@ -51,7 +51,16 @@
 .sg-pattern-key { color: #d2cbdf; font-size: 11px; }.sg-pattern-key summary { display: flex; justify-content: space-between; align-items: center; gap: 4px; min-height: 44px; cursor: pointer; }.sg-pattern-key summary::before { content: "+"; font-size: 17px; }.sg-pattern-key[open] summary::before { content: "−"; }.sg-pattern-key summary span { margin-left: auto; color: #b8b8d0; }.sg-pattern-key p { padding: 0 4px 6px; }
 .sg-garden { position: relative; border: 1px solid #737f9877; padding: 10px 12px 12px; border-radius: 18px; background: radial-gradient(ellipse at center,#2e50634d,transparent 65%),#0c1527; box-shadow: inset 0 1px #ffffff14,0 6px 22px #0002; }
 .sg-section-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }.sg-section-heading h2 { font-size: 11px; letter-spacing: .13em; text-transform: uppercase; margin: 0; color: #e0daee; }.sg-section-heading span { font-size: 10px; color: #b9bfd2; }
-.sg-board { display: grid; grid-template-columns: repeat(5,minmax(44px,1fr)); gap: 6px; width: 100%; max-width: 520px; margin: 0 auto; }
+.sg-board { position: relative; display: grid; grid-template-columns: repeat(5,minmax(44px,1fr)); gap: 6px; width: 100%; max-width: 520px; margin: 0 auto; isolation: isolate; }
+.sg-movement { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; color: #f2cd73; filter: drop-shadow(0 1px 2px #080b16); }
+.sg-movement path { fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sg-movement-refill path { stroke-dasharray: 3 3; opacity: .88; }
+.sg-movement circle { fill: #131a2d; stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sg-movement .sg-movement-end { fill: currentColor; }
+.sg-movement-arrow { fill: currentColor; stroke: none; }
+.sg-movement-rows,.sg-movement-row,.sg-movement-spin { color: #88e4e5; }
+.sg-movement-wrap { stroke-dasharray: 2 2; opacity: .8; }
+.sg-movement-mirror { stroke-dasharray: 1.5 1.5; }
 .sg-shell .sg-star { position: relative; min-width: 44px; min-height: 44px; aspect-ratio: 1.1; padding: 3px; border: 1px solid #5c71935c; border-radius: 13px; background: radial-gradient(ellipse at 50% 90%,#52617e25,transparent 70%),#152239; box-shadow: inset 0 1px #ffffff09; }
 .sg-star svg { display: block; width: 100%; height: 100%; max-height: 88px; overflow: visible; }
 .sg-shell .sg-kind-0 { color: #ffd17b; }.sg-shell .sg-kind-1 { color: #70e3db; }.sg-shell .sg-kind-2 { color: #ff9ebe; }.sg-shell .sg-kind-3 { color: #c3b0ff; }.sg-shell .sg-kind-unknown { color: #c1c6de; border-style: dashed; }
@@ -93,7 +102,7 @@
   @keyframes sg-score-pop { 50% { transform: scale(1.14); } }
 }
 @media (forced-colors:active) {
-  .sg-shell,.sg-goal,.sg-star,.sg-preview { border-color: CanvasText; }.sg-body,.sg-rays,.sg-satellite { fill: Canvas; stroke: ButtonText; }.sg-core { fill: ButtonText; }.sg-facet { fill: Canvas; opacity: 1; stroke: ButtonText; stroke-width: .6; }.sg-orbit-line,.sg-etch,.sg-glint { stroke: ButtonText; opacity: 1; }.sg-piece-art { filter: none; }.sg-unknown-mark { fill: ButtonText; }.sg-shell .sg-selected,.sg-shell [aria-pressed=true] { outline: 3px solid Highlight; }.sg-constellation circle { fill: Canvas; stroke: CanvasText; }.sg-constellation text { fill: CanvasText; }.sg-constellation-line { stroke: CanvasText; }.sg-action-art path { stroke: ButtonText; }.sg-goal::before,.sg-goal::after { display: none; }.sg-matchable small { color: LinkText; }
+  .sg-shell,.sg-goal,.sg-star,.sg-preview { border-color: CanvasText; }.sg-body,.sg-rays,.sg-satellite { fill: Canvas; stroke: ButtonText; }.sg-core { fill: ButtonText; }.sg-facet { fill: Canvas; opacity: 1; stroke: ButtonText; stroke-width: .6; }.sg-orbit-line,.sg-etch,.sg-glint { stroke: ButtonText; opacity: 1; }.sg-piece-art { filter: none; }.sg-unknown-mark { fill: ButtonText; }.sg-shell .sg-selected,.sg-shell [aria-pressed=true] { outline: 3px solid Highlight; }.sg-constellation circle { fill: Canvas; stroke: CanvasText; }.sg-constellation text { fill: CanvasText; }.sg-constellation-line { stroke: CanvasText; }.sg-action-art path { stroke: ButtonText; }.sg-movement { color: Highlight; filter: none; }.sg-movement circle { fill: Canvas; stroke: Highlight; }.sg-movement .sg-movement-end,.sg-movement-arrow { fill: Highlight; }.sg-goal::before,.sg-goal::after { display: none; }.sg-matchable small { color: LinkText; }
 }
 
 /* Keep the selected move and its confirmation together; Cancel restores run controls. */
