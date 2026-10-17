@@ -1,16 +1,11 @@
 ---
 name: create-issue-packet
-description: Turn a feature, bug, workflow, or improvement idea into a GitHub implementation issue packet containing testable product intent. Use when the user asks to make, create, draft, or revise a packet or GitHub issue from an idea. Do not implement the issue or perform deep technical discovery.
+description: Create or revise a GitHub issue packet from a user's requested change, without authorizing implementation.
 ---
 
-# Create Issue Packet
-
-Use the **Product packet** section of `docs/AI_ISSUE_WORKFLOW.md` as the authoritative format.
-
-- Capture the user's outcome, current problem, desired behavior, acceptance criteria, non-goals, safety/production boundaries, and genuine open product questions.
-- Preserve the user's stated intent and terminology.
-- Do not perform deep repository exploration just to fill technical fields.
-- Do not speculate about file paths, routes, tables, providers, migrations, implementation architecture, or validation commands that have not been verified.
-- If minor technical details are unknown, omit them; they belong in the repository-grounded Implementation Note created when `Work issue X` begins.
-- Ask only when a missing answer would materially change the user-visible product outcome. Otherwise create the packet with reasonable product-level wording.
-- Creating the issue is not implementation authorization. Stop after the issue is created or the draft packet is delivered.
+Read section 1 of `docs/AI_ISSUE_WORKFLOW.md` and use the packet portion of
+`docs/templates/AI_ISSUE_TEMPLATE.md`. Preserve the original request and distinguish
+explicit requirements, necessary implications, harmless assumptions and optional
+ideas. Keep the scope contract small; technical design comes after Work authorization.
+Do not put code design or your suggestions into acceptance criteria. Create the requested issue
+when authorized and tools are available; otherwise deliver the draft honestly.

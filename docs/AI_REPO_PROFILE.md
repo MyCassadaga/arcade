@@ -12,11 +12,7 @@
 
 ## Model and review configuration
 
-- **Primary implementation model:** selected by the human for the main Codex session; this portable workflow does not pin or override it.
-- **Routine independent reviewer:** `terra_reviewer` — project agent `.codex/agents/terra-reviewer.toml`; `gpt-5.6-terra`, medium reasoning, read-only.
-- **High-risk independent reviewer:** `terra_reviewer_high` — project agent `.codex/agents/terra-reviewer-high.toml`; `gpt-5.6-terra`, high reasoning, read-only.
-- **Reviewer independence requirement:** reviewer must be a spawned independent context and must remain read-only.
-- **Missing reviewer behavior:** if a required configured reviewer cannot be started, stop at that review gate and report the exact problem. Do not silently substitute primary-agent self-review.
+The portable model and reviewer policy is defined in `docs/AI_WORKFLOW_MODELS.md`.
 
 ## Repository commands
 
