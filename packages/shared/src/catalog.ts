@@ -1,4 +1,5 @@
 export const GAME_CATALOG = [
+  { id: "ghost-circuit", name: "Ghost Circuit", description: "Rewire a stolen identity. Extract the archive, then improve your escape.", duration: "5–10 min", playerRange: "1 player", icon: "ghost", playMode: "single-player", availability: "public" },
   {
     id: "who-said-that",
     name: "Who Said That?",

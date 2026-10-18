@@ -1,3 +1,5 @@
+import { createGhostCircuitState, handleGhostCircuitCommand, getGhostCircuitPublicView, type GhostCircuitState } from "@team-arcade/games";
+import { ghostCircuitCommandSchema } from "@team-arcade/shared";
 import { createStarGardenState, handleStarGardenCommand, getStarGardenPublicView, getStarGardenPrivateView, type StarGardenState } from "@team-arcade/games";
 import { starGardenCommandSchema } from "@team-arcade/shared";
 import { GameRuleError } from "@team-arcade/game-core";
@@ -20,6 +22,7 @@ import {
 import type { z } from "zod";
 
 interface PartyStates {
+  "ghost-circuit": GhostCircuitState;
   "star-garden": StarGardenState;
   "who-said-that": WhoSaidThatState;
   impostor: ImpostorState;
@@ -65,6 +68,12 @@ function adapter<S, C>(definition: {
 }
 
 export const GAME_REGISTRY = {
+  "ghost-circuit": adapter({
+    create: context => createGhostCircuitState(context, crypto.randomUUID()), schema: ghostCircuitCommandSchema,
+    command: handleGhostCircuitCommand, advance: () => { throw new GameRuleError("INVALID_PHASE", "Execute a circuit to continue."); },
+    store: state => ({ gameId: "ghost-circuit", state }),
+    project: (state, viewer) => ({ gameId: "ghost-circuit", phase: "playing", public: getGhostCircuitPublicView(state), private: { canExecute: viewer.playerId === state.activePlayerId } })
+  }),
   "star-garden": adapter({
     create: (context) => createStarGardenState(context, crypto.randomUUID()), schema: starGardenCommandSchema,
     command: (state, command, actor, now, _random, isHost) => handleStarGardenCommand(state, command, actor, now, isHost, command.type === "starGarden.begin" ? crypto.randomUUID() : ""),
@@ -116,6 +125,7 @@ export function isRegisteredGame(id: string): id is PartyGameId {
 
 export function bindGame(game: StoredPartyGame): BoundAdapter {
   switch (game.gameId) {
+    case "ghost-circuit": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "star-garden": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "who-said-that": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "impostor": return GAME_REGISTRY[game.gameId].bind(game.state);

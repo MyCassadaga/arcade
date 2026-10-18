@@ -104,7 +104,7 @@ function EntryScreen({ initialCode, initialError, onRoomSession, onSoloSession }
       const nextSession = mode === "create"
         ? await createRoom(parsedName.data)
         : await joinRoom(parsedCode?.data ?? "", parsedName.data);
-      localStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
+      safeStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
       storeMultiplayerRoomPointer(nextSession.roomCode);
       window.history.replaceState(null, "", `/?room=${encodeURIComponent(nextSession.roomCode)}`);
       onRoomSession(nextSession);
@@ -120,8 +120,8 @@ function EntryScreen({ initialCode, initialError, onRoomSession, onSoloSession }
     setSoloSubmitting(gameId);
     try {
       const nextSession = await createRoom("Solo Player");
-      localStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
-      localStorage.setItem(soloRoomPointerStorageKey(gameId), nextSession.roomCode);
+      safeStorage.setItem(sessionStorageKey(nextSession.roomCode), JSON.stringify(nextSession));
+      safeStorage.setItem(soloRoomPointerStorageKey(gameId), nextSession.roomCode);
       window.history.replaceState(null, "", `/?play=${encodeURIComponent(gameId)}`);
       onSoloSession(nextSession, gameId);
     } catch (caught) {
@@ -248,9 +248,9 @@ export function Lobby({ session, soloGameId, onLeave }: {
   };
 
   const leave = useCallback(() => {
-    localStorage.removeItem(sessionStorageKey(session.roomCode));
+    safeStorage.removeItem(sessionStorageKey(session.roomCode));
     clearPlayerDrawingDrafts(session.roomCode, session.playerId);
-    if (soloGameId) localStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
+    if (soloGameId) safeStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
     else clearMultiplayerRoomPointer(session.roomCode);
     window.history.replaceState(null, "", "/");
     onLeave();
@@ -275,16 +275,16 @@ export function Lobby({ session, soloGameId, onLeave }: {
 
   useEffect(() => {
     if (!fatalSession) return;
-    localStorage.removeItem(sessionStorageKey(session.roomCode));
+    safeStorage.removeItem(sessionStorageKey(session.roomCode));
     clearPlayerDrawingDrafts(session.roomCode, session.playerId);
-    if (soloGameId) localStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
+    if (soloGameId) safeStorage.removeItem(soloRoomPointerStorageKey(soloGameId));
     else clearMultiplayerRoomPointer(session.roomCode);
     if (soloGameId) leave();
   }, [fatalSession, leave, session.playerId, session.roomCode, soloGameId]);
 
   return (
     <main
-      className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""} ${game?.gameId === "shirt-fight" ? "shirt-fight-room" : ""} ${game?.gameId === "star-garden" ? "star-garden-room" : ""}`}
+      className={`lobby-shell ${game?.gameId === "system-crawl" ? "system-crawl-room" : ""} ${soloGameId || game?.gameId === "afterprint" ? "afterprint-room" : ""} ${game?.gameId === "shirt-fight" ? "shirt-fight-room" : ""} ${game?.gameId === "star-garden" ? "star-garden-room" : ""} ${game?.gameId === "ghost-circuit" ? "ghost-circuit-room" : ""}`}
       style={{ "--arcade-viewport-height": `${viewportHeight}px` } as CSSProperties}
     >
       <header className="lobby-header">
@@ -479,6 +479,13 @@ function SoloLaunchScreen({ gameId, status, message, onCancel, onRetry }: {
   );
 }
 
+// Session pointers are best effort: storage denial must not prevent solo play.
+const safeStorage = {
+  getItem(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } },
+  setItem(key: string, value: string): void { try { localStorage.setItem(key, value); } catch { /* In-memory session remains playable. */ } },
+  removeItem(key: string): void { try { localStorage.removeItem(key); } catch { /* Storage can be denied. */ } }
+};
+
 function readInitialRoute(): InitialRoute {
   const params = new URLSearchParams(window.location.search);
   const inviteCode = roomCodeSchema.safeParse(params.get("room") ?? "").data ?? "";
@@ -487,30 +494,30 @@ function readInitialRoute(): InitialRoute {
   const requestedGameId = params.get("play");
   const soloGame = SINGLE_PLAYER_GAME_CATALOG.find((game) => game.id === requestedGameId);
   if (soloGame) {
-    const pointer = localStorage.getItem(soloRoomPointerStorageKey(soloGame.id)) ?? "";
+    const pointer = safeStorage.getItem(soloRoomPointerStorageKey(soloGame.id)) ?? "";
     const roomCode = roomCodeSchema.safeParse(pointer).data;
     const session = roomCode ? readStoredSession(roomCode) : null;
     if (session) return { inviteCode: "", session, soloGameId: soloGame.id };
-    localStorage.removeItem(soloRoomPointerStorageKey(soloGame.id));
-    if (roomCode) localStorage.removeItem(sessionStorageKey(roomCode));
+    safeStorage.removeItem(soloRoomPointerStorageKey(soloGame.id));
+    if (roomCode) safeStorage.removeItem(sessionStorageKey(roomCode));
     window.history.replaceState(null, "", "/");
     return { inviteCode: "", session: null, soloGameId: null };
   }
 
-  const pointer = roomCodeSchema.safeParse(localStorage.getItem(multiplayerRoomPointerStorageKey) ?? "").data;
+  const pointer = roomCodeSchema.safeParse(safeStorage.getItem(multiplayerRoomPointerStorageKey) ?? "").data;
   const session = pointer ? readStoredSession(pointer) : null;
   if (pointer && session) {
     window.history.replaceState(null, "", `/?room=${encodeURIComponent(pointer)}`);
     return { inviteCode: pointer, session, soloGameId: null };
   }
-  if (pointer) localStorage.removeItem(sessionStorageKey(pointer));
+  if (pointer) safeStorage.removeItem(sessionStorageKey(pointer));
   clearMultiplayerRoomPointer();
   return { inviteCode: "", session: null, soloGameId: null };
 }
 
 function readStoredSession(roomCode: string): RoomSessionResponse | null {
   try {
-    const raw = localStorage.getItem(sessionStorageKey(roomCode));
+    const raw = safeStorage.getItem(sessionStorageKey(roomCode));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<RoomSessionResponse>;
     return parsed.roomCode === roomCode && typeof parsed.playerId === "string" && typeof parsed.sessionToken === "string"
@@ -522,9 +529,9 @@ function readStoredSession(roomCode: string): RoomSessionResponse | null {
 }
 
 function clearStoredSession(session: RoomSessionResponse, gameId: SoloGameId | null): void {
-  localStorage.removeItem(sessionStorageKey(session.roomCode));
+  safeStorage.removeItem(sessionStorageKey(session.roomCode));
   clearPlayerDrawingDrafts(session.roomCode, session.playerId);
-  if (gameId) localStorage.removeItem(soloRoomPointerStorageKey(gameId));
+  if (gameId) safeStorage.removeItem(soloRoomPointerStorageKey(gameId));
   else clearMultiplayerRoomPointer(session.roomCode);
   window.history.replaceState(null, "", "/");
 }

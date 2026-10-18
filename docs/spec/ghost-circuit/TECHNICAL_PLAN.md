@@ -14,13 +14,13 @@ No live inference, multiplayer mode or new backend is required. Reuse the establ
 |---|---|---|---|---|
 | Existing Arcade toolchain | Required runtime/build/test | Verified tracked TypeScript/React/Vite, Node 22 and npm-workspace scripts at f95bd440 | Run focused/local checks under the authorized M0 scope | Use existing dependencies; no new installs |
 | Cloudflare hosting | Existing Worker/static-assets integration verified | Account, product, versions, plan and access unverified | Reuse deployment convention; no deployment authorized here | Deliver changes through project workflow |
-| Built-in image generation | Optional production art; used for V01 | Tested in this conversation; no model/version claim | Generate/edit assets when authorized; log prompts and source files | Reuse reference for manually authored art with approved approach |
+| Built-in image generation | M0 representative atlas; source package reports V01 generation | Native image dispatch returned the M0 atlas artifact on 2026-10-17; no model/version claim | Generate/edit assets when authorized; log prompts and source files | Reuse reference for manually authored art with approved approach |
 | Local filesystem/Python standard library | Package writing and validation | Used successfully for this deliverable | Write documents, copy original image, validate links, zip | Plain file tooling |
 | SVG/native browser drawing | Proposed ports and overlays | Architecture proposal; compatibility not runtime-tested | Render geometry and input states within existing framework | Existing Arcade rendering layer |
 | Aseprite | Optional cleanup, not required | Skill states user owns a license; installed version/access unverified | Manual sprite cleanup only if helpful; no assumption of automation access | Existing editor or image-edit tool |
 | Audio production | Optional short cues | No tool, export pipeline or license verified | Select original or licensed sounds with provenance later | Ship proof muted; no music dependency |
 
-Planning itself does not verify tool operation in Arcade. No software installation is requested. No external documentation or pricing research was performed for this portable draft; time-sensitive tool/rights claims remain unverified rather than assumed.
+Planning itself does not verify tool operation in Arcade. No software installation is requested. No external documentation or pricing research was performed for the original portable draft; time-sensitive tool/rights claims remain unverified rather than assumed.
 
 ## 3. Costs and rights
 
@@ -54,7 +54,7 @@ M0 is authorized by the owner; M1–M3 remain proposed future stages gated on M0
 | M2 — First usable game | Six contracts, final intended art, tutorial, multiple validated challenge routes | 004,007,008,009 | Witness solution verification, playtest difficulty notes, asset manifest, responsive visual evidence |
 | M3 — Arcade delivery | Scoped integration and project checks, required independent review through active repo workflow | 011 and regression of all | Exact required evidence under repo policy; release only when separately authorized |
 
-## 6. Verification plan — pending M0 execution
+## 6. Verification plan — M0 evidence summarized in section 11
 
 | Coverage | Method / expected outcome |
 |---|---|
@@ -103,3 +103,16 @@ Common prefix: A1 → B1 → C1 → D1 → E1 → F1 → F2 → F3 → E3 → D3
 - Post-vault detection suffix: C3 → C2 → B2 → A2 → A3 → A4 → A5 → B5 → B6 → A6 (6 straight / 8 elbow total); execution must stop at B2.
 
 These are design witnesses until executed by tests. Human difficulty/fun evaluation remains pending. The representative atlas is in apps/web/public/ghost-circuit/atlas.png with its generation provenance manifest; crisp connectors/ports remain separately rendered. Final independent HIGH review follows focused checks, CI and runtime interaction/visual evidence.
+
+## 11. M0 implementation evidence (local/preview; 2026-10-17)
+
+The representative contract, pure rules, existing solo-room integration, bounded authoritative attempt/receipt handling, client editor/replay, versioned draft/history recovery and illustrated runtime are implemented for independent review. M1–M3 and the remaining five contracts remain gated; no release/production action was performed.
+
+- Focused rules and React editor/storage/retry/replay checks: 11 passed.
+- Focused Worker authorization, idempotency/altered-payload/staleness, concurrent tabs, Durable Object reload and receipt-eviction checks: 3 passed.
+- Focused browser checks: 4 passed, covering failure → Basic → Full Haul, keyboard/touch, free pause/step/replay, reload, denied storage, expiry/history and reduced motion. After narrow layout corrections, the affected viewport/touch checks passed 2/2; unrelated authority/storage evidence was reused because only CSS and viewport assertions changed.
+- Type checking and lint passed; final web build passed. Current-head broad CI and independent HIGH review are tracked on issue #39 rather than duplicated here.
+- Primary manually assembled a Basic route with normal UI controls, executed it, observed a facing-port failure while improving it, corrected to Full Haul, paused/stepped replay without another attempt, and reloaded with execution count and best result preserved.
+- Desktop QA found the original 550px board pushed controls off screen; the compact correction keeps board/inventory/objective/Execute within 1440×900. The 320px correction reserves 48px cells without horizontal page overflow. Screenshots and observed playback are local runtime evidence, not proof of human-rated difficulty/fun.
+
+Human M0 evaluation is still pending. The next content expansion is not authorized by automated tests or independent code review.

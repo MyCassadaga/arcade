@@ -34,7 +34,7 @@ First usable content: six authored contracts, including two onboarding contracts
 
 ## 3. Requirements
 
-All implementation statuses below begin Not started. The five review revisions and M0 scope are approved; the complete six-contract release remains gated on M0 evaluation.
+M0 portions are implemented for review; requirements spanning M1–M3 and the six-contract release remain incomplete. The five review revisions and M0 scope are approved; the complete six-contract release remains gated on M0 evaluation.
 
 | ID | Observable behavior | Purpose | Priority | Source | Decision | Acceptance | Dependencies |
 |---|---|---|---|---|---|---|---|
