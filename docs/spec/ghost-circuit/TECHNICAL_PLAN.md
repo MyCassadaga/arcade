@@ -116,3 +116,9 @@ The representative contract, pure rules, existing solo-room integration, bounded
 - Desktop QA found the original 550px board pushed controls off screen; the compact correction keeps board/inventory/objective/Execute within 1440×900. The 320px correction reserves 48px cells without horizontal page overflow. Screenshots and observed playback are local runtime evidence, not proof of human-rated difficulty/fun.
 
 Human M0 evaluation is still pending. The next content expansion is not authorized by automated tests or independent code review.
+
+### Independent-review correction
+
+The initial HIGH review found that Replay latest combined accepted events with the current edited draft geometry. The correction renders accepted geometry and its inventory during playback while preserving the separate editable draft and undo/redo. A new React regression and affected browser flow passed: remove B1 after a successful run → replay shows recorded B1 and inventory → Return to edit restores empty B1 → Undo/Redo remains intact, with zero new execution command. Primary repeated this through visible browser controls and the execution count stayed at 3. Focused screen7 + protocol11 checks passed, alongside the affected browser test and rebuilt web app.
+
+The same correction batch updates the existing exact public/solo catalog expectations to include Ghost Circuit while preserving hidden-game and play-mode assertions; this fixes the first CI validation failure without weakening filtering. Runtime rules/DO/storage and non-replay layout evidence are unchanged. Previous replay observations are superseded by the corrected regression/QA evidence; current-candidate CI and correction review remain canonical on issue #39.

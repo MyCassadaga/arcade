@@ -37,6 +37,26 @@ describe("Ghost Circuit editor, replay and local recovery", () => {
   fireEvent.click(screen.getByRole("button", { name: "Replay latest" })); void act(() => vi.advanceTimersByTime(320)); fireEvent.click(screen.getByRole("button", { name: "Pause" })); fireEvent.click(screen.getByRole("button", { name: "Step" })); fireEvent.click(screen.getByRole("button", { name: "Return to edit" })); expect(send).not.toHaveBeenCalled(); ui.unmount();
   render(<GhostCircuitScreen game={game(accepted)} connected commandPending={false} send={send} backToArcade={() => true} />); expect(screen.getByRole("button", { name: "EXECUTE CIRCUIT →" })).toBeEnabled(); expect(send).not.toHaveBeenCalled(); vi.useRealTimers();
  });
+ it("replays recorded geometry and inventory while preserving edited draft and undo history", () => {
+  const accepted = handleGhostCircuitCommand(state(), run(), "courier").state, send = vi.fn(() => true);
+  render(<GhostCircuitScreen game={game(accepted)} connected commandPending={false} send={send} backToArcade={() => true} />);
+  fireEvent.focus(screen.getByRole("button", { name: /B1 straight/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove ×" }));
+  expect(screen.getByRole("button", { name: /B1 empty socket/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^straight/ })).toHaveTextContent("2 left");
+  fireEvent.click(screen.getByRole("button", { name: "Replay latest" }));
+  expect(screen.getByRole("button", { name: /B1 straight/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^straight/ })).toHaveTextContent("1 left");
+  expect(readGhostDraft(game(accepted).public).draft?.layout.some(p => p.cell === 1)).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Return to edit" }));
+  expect(screen.getByRole("button", { name: /B1 empty socket/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^straight/ })).toHaveTextContent("2 left");
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(screen.getByRole("button", { name: /B1 straight/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+  expect(screen.getByRole("button", { name: /B1 empty socket/ })).toBeInTheDocument();
+  expect(send).not.toHaveBeenCalled();
+ });
  it("recovers corrupt/version mismatched drafts and denied storage without aborting editing", () => {
   localStorage.setItem(ghostDraftKey(state().gameInstanceId), "{broken"); expect(readGhostDraft(game().public).draft).toBeNull();
   localStorage.setItem(ghostDraftKey(state().gameInstanceId), JSON.stringify({ version: 2 })); expect(readGhostDraft(game().public).draft).toBeNull();

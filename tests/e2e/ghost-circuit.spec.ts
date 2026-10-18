@@ -26,7 +26,18 @@ test("Ghost Circuit: keyboard edits, authoritative failure/correction/improvemen
   await page.evaluate(() => window.scrollTo(0, 0));
   for (const selector of [".gc-board", ".gc-tray", ".gc-execute", ".gc-mission h2"]) { const box = await page.locator(selector).first().boundingBox(); expect(box).not.toBeNull(); expect(box!.y).toBeGreaterThanOrEqual(0); expect(box!.y + box!.height).toBeLessThanOrEqual(900); }
  } await page.screenshot({ path: testInfo.outputPath(`ghost-circuit-${width}.png`), fullPage: true }); }
- const before = await page.locator(".gc-counter strong").innerText(); await page.getByRole("button", { name: "Replay latest" }).click(); await page.getByRole("button", { name: "Return to edit" }).click(); await expect(page.locator(".gc-counter strong")).toHaveText(before);
+ const before = await page.locator(".gc-counter strong").innerText();
+ await page.getByRole("button", { name: /B1 straight/ }).focus(); await page.getByRole("button", { name: "Remove ×" }).click();
+ await expect(page.getByRole("button", { name: /^B1 empty socket/ })).toBeVisible();
+ await expect(page.locator(".gc-tray").getByRole("button", { name: /straight/ })).toContainText("1 left");
+ await page.getByRole("button", { name: "Replay latest" }).click();
+ await expect(page.getByRole("button", { name: /B1 straight/ })).toBeVisible();
+ await expect(page.locator(".gc-tray").getByRole("button", { name: /straight/ })).toContainText("0 left");
+ await page.getByRole("button", { name: "Return to edit" }).click();
+ await expect(page.getByRole("button", { name: /^B1 empty socket/ })).toBeVisible();
+ await page.getByRole("button", { name: "Undo", exact: true }).click(); await expect(page.getByRole("button", { name: /B1 straight/ })).toBeVisible();
+ await page.getByRole("button", { name: "Redo", exact: true }).click(); await expect(page.getByRole("button", { name: /^B1 empty socket/ })).toBeVisible();
+ await expect(page.locator(".gc-counter strong")).toHaveText(before);
 });
 test("Ghost Circuit: unavailable storage still launches and reduced-motion execution remains usable", async ({ page }) => {
  await page.emulateMedia({ reducedMotion: "reduce" }); await page.addInitScript(() => { for (const method of ["getItem", "setItem", "removeItem"] as const) Storage.prototype[method] = () => { throw Error("Storage denied"); }; });
