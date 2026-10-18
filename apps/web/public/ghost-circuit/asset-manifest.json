@@ -1,0 +1,13 @@
+{
+  "asset": "atlas.png",
+  "sha256": "377ac3267c42ddce35076b08c422be3f6372ae37f4f658d6ea7951f03bd81c1e",
+  "created": "2026-10-17",
+  "tool": "Built-in image_gen; tool dispatch returned an image artifact",
+  "purpose": "M0 runtime illustration atlas; four columns x two rows: socket, entry, badge, scanner, vault, cache, exit, ghost",
+  "source": "Original generated PNG retained as runtime raster source; not a layered source document",
+  "prompt": "Transparent 4x2 production sprite atlas of hand-inked weathered teal cyberpunk hardware, cream accents, amber badge, mint light, coral scanner; isolated centered sprites, no text/ports/connectors. Full generation prompt retained in Codex chat tool record.",
+  "edits": "None; native image copied byte-for-byte",
+  "reference": "Art direction from approved package concept in docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png; new sprites generated independently",
+  "scope": "Only representative M0 set; no bulk final-release asset production",
+  "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec."
+}
