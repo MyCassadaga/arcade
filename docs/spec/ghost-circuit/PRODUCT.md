@@ -6,8 +6,8 @@ This is the sole approval and version record for this package.
 
 | Field | Record |
 |---|---|
-| Version | 0.2.0 |
-| Status | APPROVED REVISIONS — M0 authorized |
+| Version | 0.2.1 |
+| Status | M0 visual correction authorized; visual acceptance pending |
 | Date | 2026-10-17 |
 | Approved package baseline | 0.2.0: five review revisions approved on 2026-10-17; one-contract M0 proof authorized; six-contract expansion remains gated |
 | Established direction | Rewire-the-network puzzle; drawn cyberpunk art; arrange, execute, learn, improve |
@@ -104,3 +104,11 @@ Authority: in this chat the owner agreed individually with revisions #1–#5, th
 5. Challenges require distinct Basic/Full Haul completions; teach Ghost before enabling it on designated contracts. Tutorials may omit untaught ratings/achievements.
 
 First authorized milestone: M0 only, delivered for local/preview evaluation through the native issue/review workflow. The concept image is art direction; FORK/SPOOF/SCRUB, trace accumulation and neighboring scanner hazards remain deferred.
+
+## 9. Visual fidelity amendment — 2026-10-17 (0.2.1)
+
+Owner feedback: “What happened to our concept art? Was so cute. This is kinda meh.” Followed by: “Yes. Please get us back on track for look and feel.” The owner also asked for practical guidance to improve visual fidelity in future game work. This authorizes a correction of REQ-008/009 and issue #39 AC-6; mechanics and the one-contract scope remain frozen.
+
+The approved concept is the visual acceptance target for composition, drawn material, atmosphere and character prominence. Merely reusing its palette or tiny hardware sprites is insufficient. The M0 must already show the illustrated city/cabinet surroundings, warm paper mission dossier, prominent cute courier during planning, physical inventory cards and dominant ochre Execute plate. Final-release polish is not an excuse to omit this identity from M0.
+
+Astra's bounded correction keeps a 550–600px desktop board, repositions controls to preserve that scale, and supplies only the three representative illustration/material assets needed by this proof. No gameplay, server, storage, provider, dependency or release authority changes. Existing high-risk behavior evidence can be reused where source is byte-identical; affected visual/interaction evidence and code review must be refreshed. The user has not accepted the corrected visuals yet; show actual runtime comparison before claiming visual success.

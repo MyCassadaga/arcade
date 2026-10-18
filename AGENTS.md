@@ -67,4 +67,10 @@ Verify behavior, visuals, and interaction using the specified evidence; label
 untested work honestly. Do not treat a concept image or a successful build as
 proof that the product is complete. Report the requirement IDs and actual tests
 or reviews behind each completion claim.
+For Ghost Circuit visual work, open `docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png`
+and apply the concept-fidelity contract in DESIGN.md section 8. Inspect real desktop/phone
+screenshots beside that reference before reporting visual success. Preserve composition,
+character prominence, physical materials and atmosphere; passing functional checks or
+matching colors alone does not satisfy this requirement.
+
 <!-- END DEVELOPMENT-SPEC:MANAGED -->

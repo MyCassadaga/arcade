@@ -12,10 +12,23 @@ async function reset(page: Page) { page.once("dialog", d => d.accept()); await p
 test("Ghost Circuit: keyboard edits, authoritative failure/correction/improvement, free replay and persisted summary", async ({ page }, testInfo) => {
  await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/"); await page.getByRole("button", { name: "Play Ghost Circuit solo" }).click();
  await expect(page.getByRole("heading", { name: "GHOST CIRCUIT" })).toBeVisible(); await expect(page.locator(".gc-counter strong")).toHaveText("0");
- const b1 = page.getByRole("button", { name: /^B1 empty/ }); await b1.focus(); await b1.press("Enter"); await page.keyboard.press("r"); await expect(page.getByRole("button", { name: /B1 straight, ports S N/ })).toBeVisible(); await page.keyboard.press("Delete"); await expect(b1).toBeVisible();
+ await page.setViewportSize({ width: 1440, height: 900 });
+ const cabinet = await page.locator(".gc-shell").boundingBox(), board = await page.locator(".gc-board").boundingBox(), portrait = await page.locator(".gc-portrait").boundingBox();
+ expect(await page.locator(".gc-portrait img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+ expect(cabinet!.width).toBeGreaterThanOrEqual(1180); expect(cabinet!.width).toBeLessThanOrEqual(1260); expect(board!.width).toBeGreaterThanOrEqual(550); expect(board!.width).toBeLessThanOrEqual(600); expect(portrait!.height).toBeGreaterThanOrEqual(220); expect(portrait!.height).toBeLessThanOrEqual(280);
+ await page.screenshot({ path: testInfo.outputPath("ghost-circuit-initial-1440.png"), fullPage: true });
+ await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: testInfo.outputPath("ghost-circuit-initial-390.png"), fullPage: true });
+ await page.setViewportSize({ width: 320, height: 844 }); await page.screenshot({ path: testInfo.outputPath("ghost-circuit-initial-320.png"), fullPage: true }); await page.setViewportSize({ width: 390, height: 844 });
+ const b1 = page.getByRole("button", { name: /^B1 empty/ }); await b1.focus(); await b1.press("Enter"); await page.keyboard.press("r"); await expect(page.getByRole("button", { name: /B1 straight, ports S N/ })).toBeVisible();
+ for (const width of [1440,390,320]) { await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 }); await page.screenshot({ path: testInfo.outputPath(`ghost-circuit-selected-${width}.png`), fullPage: true }); }
+ await page.setViewportSize({width:390,height:844}); await page.getByRole("button", {name:/B1 straight/}).focus(); await page.keyboard.press("Delete"); await expect(b1).toBeVisible();
  await placeWitness(page, GHOST_WITNESS_PATHS.detected); await page.getByRole("button", { name: "EXECUTE CIRCUIT →" }).click(); await expect(page.locator(".gc-counter strong")).toHaveText("1");
  await page.getByRole("button", { name: "Pause", exact: true }).click(); const paused = await page.locator(".gc-status").innerText(); await page.waitForTimeout(450); await expect(page.locator(".gc-status")).toHaveText(paused); await page.getByRole("button", { name: "Step", exact: true }).click(); await expect(page.locator(".gc-status")).not.toHaveText(paused); await expect(page.locator(".gc-counter strong")).toHaveText("1");
- await expect(page.locator(".gc-result")).toContainText("Detected"); await page.getByRole("button", { name: "Return to edit" }).click(); await reset(page);
+ await expect(page.locator(".gc-result")).toContainText("Detected");
+ for (let i=0; i<100 && await page.getByRole("button", {name:"Step",exact:true}).isEnabled(); i++) await page.getByRole("button", {name:"Step",exact:true}).click();
+ await expect(page.locator(".gc-status")).toContainText("Detected");
+ for (const width of [1440,390,320]) { await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 }); await page.screenshot({ path: testInfo.outputPath(`ghost-circuit-failure-${width}.png`), fullPage: true }); }
+ await page.setViewportSize({width:390,height:844}); await page.getByRole("button", { name: "Return to edit" }).click(); await reset(page);
  await placeWitness(page, GHOST_WITNESS_PATHS.basic); await page.getByRole("button", { name: "EXECUTE CIRCUIT →" }).click(); await expect(page.locator(".gc-result h2")).toHaveText("✓ Basic"); await expect(page.locator(".gc-counter strong")).toHaveText("2");
  await page.getByRole("button", { name: "Return to edit" }).click(); await page.reload(); await expect(page.locator(".gc-counter strong")).toHaveText("2"); await expect(page.getByRole("button", { name: "EXECUTE CIRCUIT →" })).toBeEnabled();
  await reset(page); await placeWitness(page, GHOST_WITNESS_PATHS.full); await page.getByRole("button", { name: "EXECUTE CIRCUIT →" }).click(); await expect(page.locator(".gc-result h2")).toHaveText("✓ Full Haul"); await expect(page.locator(".gc-result")).toContainText("first escape: execution 2"); await page.getByRole("button", { name: "Return to edit" }).click();

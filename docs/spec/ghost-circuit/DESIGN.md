@@ -106,3 +106,20 @@ Non-negotiable: drawn identity, obvious grid/ports, charming courier, visible in
 ## 7. M0 runtime asset delivery
 
 A new representative transparent atlas was generated with the built-in image tool on 2026-10-17 and copied without edits to `apps/web/public/ghost-circuit/atlas.png`. Its provenance/hash and intended 4×2 cell mapping are in `asset-manifest.json` beside it: socket, entry, badge, scanner / vault, cache, exit, courier. This is the M0 illustration set; it does not certify final-release assets, production rights clearance or completion of the larger asset table above. The original concept remains a direction reference in this spec. Routes, ports, labels and state overlays are rendered separately in the runtime.
+
+## 8. Binding concept-fidelity contract — approved correction 0.2.1
+
+Visual source: `visuals/ghost-circuit-concept.png`. Open the actual image before implementation and at runtime QA. The concept's future mechanics remain excluded, while its composition, character and physical materials control the look.
+
+| Attribute | Required runtime evidence | Rejected substitute |
+|---|---|---|
+| Composition and scale | At 1440×900, centered 1180–1260px cabinet; dominant 550–600px board left, substantial paper/character/action column right | A small board inside a generic rounded application card |
+| World and materials | Visible ink-drawn teal city/cables at cabinet edges, scuffed metal framing, cream physical cards/paper, warm ochre action | Flat dark panels carrying the palette alone |
+| Character | Recognizable rounded cream ghost with black oval eyes and satchel, persistent during initial planning; 220–280px desktop and 100–140px phone portrait | Courier visible only as a tiny replay sprite |
+| Mission hierarchy | Real HTML mission/objective text on warm worn paper, concise Basic/Full Haul rows, strong Execute plate | Long unstructured dark text column or generated text baked into art |
+| Board and controls | Physical, readable sockets/nodes; clean edge-midpoint connectors; large straight/elbow previews on cream inventory cards; distinct editing tools | Entire flattened concept screenshot or decorative cables that look functional |
+| Responsive and accessible | Compact character/brief before phone board; 48px cells at 320px; no horizontal page overflow; non-color focus/error/selection and reduced motion | Hiding the mascot or shrinking the board to preserve desktop proportions |
+
+Preserve native interactions and authoritative game behavior. Move the existing Execute control/handler rather than creating another execution path. Keep one coherent keyboard/DOM order. Expanded help, sharing/history and secondary recovery text may extend below the desktop core; they must not shrink the board.
+
+Before visual sign-off, inspect actual initial planning, selected piece, failed replay and success screenshots alongside the concept at 1440×900, 390×844 and 320px. Judge the silhouette at thumbnail scale, then inspect material/character/connector details at actual scale. Functional tests and dimensions are supporting evidence; neither establishes concept fidelity. Record concrete remaining differences and correct them before handing off. This is an engineering QA obligation; no extra owner permission ceremony is introduced.

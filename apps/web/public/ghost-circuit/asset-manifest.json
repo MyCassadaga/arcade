@@ -9,5 +9,58 @@
   "edits": "None; native image copied byte-for-byte",
   "reference": "Art direction from approved package concept in docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png; new sprites generated independently",
   "scope": "Only representative M0 set; no bulk final-release asset production",
-  "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec."
+  "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec.",
+  "visualCorrectionAssets": [
+    {
+      "asset": "surround.png",
+      "sha256": "905a2a4b58c6bfd8cffe93d52a336650665dad5d31420823d585467452a5ae18",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "bytes": 3148283,
+      "created": "2026-10-17",
+      "tool": "Built-in image_gen; native tool returned image artifact",
+      "reference": "docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png, supplied as referenced_image_paths",
+      "promptSummary": "Reference-faithful hand-inked 3:2 cyberpunk city/cabinet surround. Left/right outer 12% contain dense cute teal city, windows, cats and cables; center 76% is quiet worn dark teal. No game board, grid, UI, text or characters. Cream/ochre/mint/coral accents, matte ink, no glossy 3D.",
+      "fullPrompt": "Retained in Codex session native image_gen tool record",
+      "edits": "None; generated PNG copied byte-for-byte into runtime assets",
+      "scope": "Authorized representative M0 visual fidelity correction, spec 0.2.1; no additional mechanics",
+      "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec."
+    },
+    {
+      "asset": "courier.png",
+      "sha256": "41d8e8687df45cb49bbb982f32b0317a4123ed423b9e52206a007e5dc19c27ac",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "bytes": 2186590,
+      "created": "2026-10-17",
+      "tool": "Built-in image_gen; native tool returned image artifact",
+      "reference": "docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png, supplied as referenced_image_paths",
+      "promptSummary": "Isolated same cute ghost from supplied reference for large paper portrait. Full rounded ragged cream silhouette, tall black oval eyes, brown satchel with brass buckle. Hand-inked matte paper brush texture. No environment, UI or text. Transparent alpha, centered 80% of square.",
+      "fullPrompt": "Retained in Codex session native image_gen tool record",
+      "edits": "None; generated PNG copied byte-for-byte into runtime assets",
+      "scope": "Authorized representative M0 visual fidelity correction, spec 0.2.1; no additional mechanics",
+      "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec."
+    },
+    {
+      "asset": "paper.png",
+      "sha256": "c6edd5381ca1123f5a967bbfc650625c8d0e9e3e5d2c55d551df5cc8c2074d55",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "bytes": 2796639,
+      "created": "2026-10-17",
+      "tool": "Built-in image_gen; native tool returned image artifact",
+      "reference": "docs/spec/ghost-circuit/visuals/ghost-circuit-concept.png, supplied as referenced_image_paths",
+      "promptSummary": "Blank portrait 2:3 worn cream mission sheet matching supplied reference. Ragged edges, pin/tape, folds, teal smudges and clean center. No words, symbols, characters or grid. Transparent outside.",
+      "fullPrompt": "Retained in Codex session native image_gen tool record",
+      "edits": "None; generated PNG copied byte-for-byte into runtime assets",
+      "scope": "Authorized representative M0 visual fidelity correction, spec 0.2.1; no additional mechanics",
+      "rights": "Generated using the built-in tool in this authorized session. No third-party source art/font/audio imported; no claim of exclusive ownership. Production-release rights/terms verification remains pending per spec."
+    }
+  ]
 }
