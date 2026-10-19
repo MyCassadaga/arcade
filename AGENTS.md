@@ -34,6 +34,13 @@ await direct owner authority when no grant applies. Release-ready requires known
 applicable prerequisites; otherwise report implementation reviewed and release blocked.
 <!-- portable-codex-workflow:end -->
 
+## Game visual fidelity
+
+For visual planning, implementation or review of any Arcade game, read
+[docs/GAME_VISUAL_FIDELITY.md](docs/GAME_VISUAL_FIDELITY.md) and the applicable
+approved game design/reference files. Apply the standard within the authorized
+scope and existing issue/review workflow.
+
 <!-- BEGIN DEVELOPMENT-SPEC:MANAGED -->
 ## Ghost Circuit development specification
 
