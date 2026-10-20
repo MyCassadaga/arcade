@@ -17,7 +17,10 @@ async function observe(page: Page) {
     };
   });
 }
-async function view(page: Page): Promise<View> { return page.evaluate(() => { if (!window.starGardenTestView) throw Error("Missing garden view"); return window.starGardenTestView; }); }
+async function view(page: Page): Promise<View> {
+  await expect.poll(() => page.evaluate(() => window.starGardenTestView !== undefined), { message: "Authoritative Star Garden snapshot received" }).toBe(true);
+  return page.evaluate(() => { if (!window.starGardenTestView) throw Error("Missing garden view"); return window.starGardenTestView; });
+}
 async function revised(page: Page, previous: View) { await expect.poll(async () => { const next = await view(page); return next.private.revision > previous.private.revision || next.phase !== previous.phase; }).toBe(true); }
 async function selectFirstCard(page: Page) {
   const current = await view(page), card = current.private.hand[0]!;
@@ -35,6 +38,39 @@ async function tabTo(page: Page, text: string) {
   }
   throw Error(`Could not tab to ${text}`);
 }
+
+test("Star Garden readback waits for a delayed authoritative snapshot after reload", async ({ page }) => {
+  let holdSnapshots = false;
+  const heldSnapshots: (() => void)[] = [];
+  await page.routeWebSocket("**/api/rooms/*/socket", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((raw) => server.send(raw));
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw)) as { type: string };
+      if (holdSnapshots && message.type === "game.state") heldSnapshots.push(() => socket.send(raw));
+      else socket.send(raw);
+    });
+  });
+  await observe(page); await page.goto("/");
+  await page.getByRole("button", { name: "Play Star Garden solo" }).click();
+  await page.getByRole("button", { name: "Begin", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Your garden", exact: true })).toBeVisible();
+  const before = await view(page);
+  holdSnapshots = true;
+  await page.reload();
+  await expect.poll(() => heldSnapshots.length).toBeGreaterThan(0);
+  // Start readback while the real DO snapshot is withheld. The next browser
+  // evaluation is an ordering barrier: an immediate read would already have failed.
+  const restored = view(page).then((value) => ({ value, error: null }), (error: unknown) => ({ value: null, error }));
+  expect(await page.evaluate(() => window.starGardenTestView === undefined)).toBe(true);
+  holdSnapshots = false;
+  for (const send of heldSnapshots) send();
+  const result = await restored;
+  expect(result.error).toBeNull();
+  if (!result.value) throw Error("Readback returned no garden view");
+  expect(result.value.private.revision).toBe(before.private.revision);
+  expect(result.value.private).toEqual(before.private);
+});
 
 test("Star Garden Daily: keyboard setup/tutorial, real run, previews/cancel, claim refresh/reconnect/share/replay at 320px and desktop", async ({ page }, testInfo) => {
   let dropNextCard = false, droppedAck = false, replayAck = false, lostCommand = "";

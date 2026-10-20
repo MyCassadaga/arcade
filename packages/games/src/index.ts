@@ -6,3 +6,5 @@ export * from "./afterprint";
 export * from "./shirt-fight";
 
 export * from "./star-garden";
+
+export * from "./ghost-circuit";

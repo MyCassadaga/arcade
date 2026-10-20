@@ -433,7 +433,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     } catch (error) {
       if (error instanceof GameRuleError || error instanceof SystemCrawlRuleError) {
         this.sendError(socket, error.code, error.message, parsed.data.requestId);
-        if (parsed.data.type === "game.command" && parsed.data.payload.command.type.startsWith("starGarden.")) this.sendGameState(socket, attachment.playerId);
+        if (parsed.data.type === "game.command" && (parsed.data.payload.command.type.startsWith("starGarden.") || parsed.data.payload.command.type === "ghostCircuit.execute")) this.sendGameState(socket, attachment.playerId);
         return;
       }
       console.error(JSON.stringify({
@@ -591,6 +591,14 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
+    const ghostReceipt = this.readGhostReceipts().find(r => r.playerId === playerId && r.requestId === message.requestId);
+    const isGhostCommand = message.type === "game.command" && message.payload.command.type === "ghostCircuit.execute";
+    if (ghostReceipt) {
+      if (ghostReceipt.payload !== JSON.stringify(message)) throw new GameRuleError("INVALID_COMMAND", "A request ID cannot be reused with a different payload.");
+      this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
+      this.sendGameState(socket, playerId);
+      return;
+    }
     const starReceipt = this.readStarGardenReceipts().find((r) => r.playerId === playerId && r.requestId === message.requestId);
     const isStarCommand = message.type === "game.command" && message.payload.command.type.startsWith("starGarden.");
     if (starReceipt) {
@@ -600,7 +608,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
     if (this.wasProcessed(playerId, message.requestId)) {
-      if (isStarCommand) throw new GameRuleError("INVALID_COMMAND", "That request ID was already used.");
+      if (isStarCommand || isGhostCommand) throw new GameRuleError("INVALID_COMMAND", "That request ID was already used.");
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
       return;
     }
@@ -778,7 +786,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       scoreDelta,
       playerId,
       requestId,
-      game.gameId === "star-garden" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined
+      game.gameId === "star-garden" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined,
+      game.gameId === "ghost-circuit" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined
     );
     this.send(socket, { type: "command.ack", requestId, payload: { accepted: true } });
     this.broadcast({ type: "room.presence", payload: this.roomView() });
@@ -923,6 +932,11 @@ export class RoomDurableObject extends DurableObject<Env> {
     this.writeAssetManifest({ entries: manifest.entries.map((entry) => entry.drawingId === drawingId ? update(entry) : entry) });
   }
 
+  private readGhostReceipts(): Array<{ playerId: string; requestId: string; payload: string }> {
+    const row = ([...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'ghost-circuit-receipts'")] as unknown as StateRow[])[0];
+    return row ? JSON.parse(row.json_value) as Array<{ playerId: string; requestId: string; payload: string }> : [];
+  }
+
   private readStarGardenReceipts(): Array<{ playerId: string; requestId: string; payload: string }> {
     const row = ([...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'star-garden-receipts'")] as unknown as StateRow[])[0];
     return row ? JSON.parse(row.json_value) as Array<{ playerId: string; requestId: string; payload: string }> : [];
@@ -1028,7 +1042,8 @@ export class RoomDurableObject extends DurableObject<Env> {
     scoreDelta: Readonly<Record<string, number>> = {},
     actorPlayerId?: string,
     requestId?: string,
-    starGardenPayload?: string
+    starGardenPayload?: string,
+    ghostPayload?: string
   ): void {
     this.ctx.storage.transactionSync(() => {
       this.writeMetadata(metadata);
@@ -1041,6 +1056,10 @@ export class RoomDurableObject extends DurableObject<Env> {
       }
       if (actorPlayerId !== undefined && requestId !== undefined) {
         this.markProcessed(actorPlayerId, requestId);
+        if (ghostPayload !== undefined) {
+          const receipts = [...this.readGhostReceipts().filter(r => r.playerId !== actorPlayerId), ...this.readGhostReceipts().filter(r => r.playerId === actorPlayerId).slice(-(RECENT_REQUEST_LIMIT - 1)), { playerId: actorPlayerId, requestId, payload: ghostPayload }];
+          this.sql.exec("INSERT INTO room_state (key, json_value, updated_at) VALUES ('ghost-circuit-receipts', ?, ?) ON CONFLICT(key) DO UPDATE SET json_value = excluded.json_value, updated_at = excluded.updated_at", JSON.stringify(receipts), Date.now());
+        }
         if (starGardenPayload !== undefined) {
           const receipts = this.readStarGardenReceipts();
           const own = receipts.filter((r) => r.playerId === actorPlayerId);

@@ -1,5 +1,7 @@
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
 # Portable workflow project configuration.
-# Intentionally does NOT pin the primary model; the model selected for the main Codex session remains the primary implementer.
+# Project defaults follow the portable worker policy; running sessions may override them.
 
 [agents]
 enabled = true

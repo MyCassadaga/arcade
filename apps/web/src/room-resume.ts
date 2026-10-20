@@ -1,10 +1,12 @@
 export const multiplayerRoomPointerStorageKey = "team-arcade:multiplayer-room";
 
 export function storeMultiplayerRoomPointer(roomCode: string): void {
-  localStorage.setItem(multiplayerRoomPointerStorageKey, roomCode);
+  try { localStorage.setItem(multiplayerRoomPointerStorageKey, roomCode); } catch { /* In-memory navigation remains usable. */ }
 }
 
 export function clearMultiplayerRoomPointer(roomCode?: string): void {
-  if (roomCode && localStorage.getItem(multiplayerRoomPointerStorageKey) !== roomCode) return;
-  localStorage.removeItem(multiplayerRoomPointerStorageKey);
+  try {
+    if (roomCode && localStorage.getItem(multiplayerRoomPointerStorageKey) !== roomCode) return;
+    localStorage.removeItem(multiplayerRoomPointerStorageKey);
+  } catch { /* Storage may be unavailable. */ }
 }

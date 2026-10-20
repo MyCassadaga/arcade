@@ -1,3 +1,4 @@
+import { ghostCircuitCommandSchema, type GhostCircuitPublicView } from "./ghost-circuit";
 import { starGardenCommandSchema } from "./star-garden";
 import type { StarGardenPhase, StarGardenPublicView, StarGardenPrivateView } from "./star-garden";
 import { z } from "zod";
@@ -221,6 +222,7 @@ export const shirtFightCommandSchema = z.discriminatedUnion("type", [
 export type ShirtFightCommand = z.infer<typeof shirtFightCommandSchema>;
 
 export const gameCommandSchema = z.union([
+  ghostCircuitCommandSchema,
   starGardenCommandSchema,
   afterprintCommandSchema,
   categoriesCommandSchema,
@@ -287,7 +289,7 @@ export interface RoomView {
 }
 
 export interface GameViewerState {
-  gameId: "star-garden" | "who-said-that" | "impostor" | "categories" | "afterprint" | "shirt-fight" | "system-crawl";
+  gameId: "ghost-circuit" | "star-garden" | "who-said-that" | "impostor" | "categories" | "afterprint" | "shirt-fight" | "system-crawl";
   phase: string;
   public: unknown;
   private?: unknown;
@@ -452,6 +454,7 @@ export interface ShirtFightPrivateView {
 }
 
 export type TypedGameViewerState =
+  | { gameId: "ghost-circuit"; phase: "playing"; public: GhostCircuitPublicView; private: { canExecute: boolean } }
   | { gameId: "star-garden"; phase: StarGardenPhase; public: StarGardenPublicView; private: StarGardenPrivateView }
   | { gameId: "afterprint"; phase: "playing" | "gameResults"; public: AfterprintPublicView; private: AfterprintPrivateView }
   | { gameId: "categories"; phase: "submitting" | "reveal" | "roundResults" | "gameResults"; public: CategoriesPublicView; private: CategoriesPrivateView }
