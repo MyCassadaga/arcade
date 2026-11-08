@@ -1,4 +1,4 @@
-import { ghostCircuitCommandSchema, type GhostCircuitPublicView } from "./ghost-circuit";
+import { ghostCircuitExecuteSchema, ghostCircuitSelectSchema, type GhostCircuitPublicView } from "./ghost-circuit";
 import { starGardenCommandSchema } from "./star-garden";
 import type { StarGardenPhase, StarGardenPublicView, StarGardenPrivateView } from "./star-garden";
 import { z } from "zod";
@@ -222,7 +222,8 @@ export const shirtFightCommandSchema = z.discriminatedUnion("type", [
 export type ShirtFightCommand = z.infer<typeof shirtFightCommandSchema>;
 
 export const gameCommandSchema = z.union([
-  ghostCircuitCommandSchema,
+  ghostCircuitExecuteSchema,
+  ghostCircuitSelectSchema,
   starGardenCommandSchema,
   afterprintCommandSchema,
   categoriesCommandSchema,

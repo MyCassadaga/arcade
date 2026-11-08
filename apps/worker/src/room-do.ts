@@ -433,7 +433,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     } catch (error) {
       if (error instanceof GameRuleError || error instanceof SystemCrawlRuleError) {
         this.sendError(socket, error.code, error.message, parsed.data.requestId);
-        if (parsed.data.type === "game.command" && (parsed.data.payload.command.type.startsWith("starGarden.") || parsed.data.payload.command.type === "ghostCircuit.execute")) this.sendGameState(socket, attachment.playerId);
+        if (parsed.data.type === "game.command" && (parsed.data.payload.command.type.startsWith("starGarden.") || parsed.data.payload.command.type.startsWith("ghostCircuit."))) this.sendGameState(socket, attachment.playerId);
         return;
       }
       console.error(JSON.stringify({
@@ -592,7 +592,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
 
     const ghostReceipt = this.readGhostReceipts().find(r => r.playerId === playerId && r.requestId === message.requestId);
-    const isGhostCommand = message.type === "game.command" && message.payload.command.type === "ghostCircuit.execute";
+    const isGhostCommand = message.type === "game.command" && message.payload.command.type.startsWith("ghostCircuit.");
     if (ghostReceipt) {
       if (ghostReceipt.payload !== JSON.stringify(message)) throw new GameRuleError("INVALID_COMMAND", "A request ID cannot be reused with a different payload.");
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });

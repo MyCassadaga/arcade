@@ -1,6 +1,6 @@
 # Ghost Circuit — Design
 
-Version and approval authority: [PRODUCT.md](PRODUCT.md). Five review revisions and M0 scope approved; complete-release content remains gated.
+Version and approval authority: [PRODUCT.md](PRODUCT.md). The approved visual contract remains in section 8. Issue #45 defines the campaign amendment in section 9.
 
 ## 1. Direction and pillars
 
@@ -123,3 +123,11 @@ Visual source: `visuals/ghost-circuit-concept.png`. Open the actual image before
 Preserve native interactions and authoritative game behavior. Move the existing Execute control/handler rather than creating another execution path. Keep one coherent keyboard/DOM order. Expanded help, sharing/history and secondary recovery text may extend below the desktop core; they must not shrink the board.
 
 Before visual sign-off, inspect actual initial planning, selected piece, failed replay and success screenshots alongside the concept at 1440×900, 390×844 and 320px. Judge the silhouette at thumbnail scale, then inspect material/character/connector details at actual scale. Functional tests and dimensions are supporting evidence; neither establishes concept fidelity. Record concrete remaining differences and correct them before handing off. This is an engineering QA obligation; no extra owner permission ceremony is introduced.
+
+## 9. Campaign progression and paper layout — issue #45
+
+The 40 numbered contracts are grouped into Entry Routes, Borrowed Identity, Tight Supply, Crossed Wires and Glass Vault. The first two boards teach rotation and badge ordering in short play. Later routes layer alternatives, scarce cable types, opposing scanner effects, approaches to fixed ports, and optional caches. Two-cache boards award Full Haul only when the route carries both caches out. Every challenge has independently validated Basic and Full Haul routes. The original Borrowed Identity is an archive contract with its own versions and attempts.
+
+Every contract is available in the grouped selector. The selector marks the first unfinished campaign board as recommended and displays completion. A successful run exposes the next numbered contract. Authoring notes and route witnesses live in development fixtures, separate from browser content.
+
+The existing illustration, board, paper, and courier keep their relative hierarchy. The desktop still pairs the board with the mission and prominent portrait. On phone, the mission title and brief use the paper's full inner width, the courier sits beside the objectives, and optional rule text wraps across the paper below. The image's torn sides, tape and bottom edge occupy reserved margins. The sheet expands for taller text at widths from 320px through desktop. The animated courier, static camera and reduced-motion event presentation follow section 8.

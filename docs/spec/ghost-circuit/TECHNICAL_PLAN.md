@@ -1,6 +1,6 @@
 # Ghost Circuit — Technical Plan
 
-Version and approval authority: [PRODUCT.md](PRODUCT.md). Repository integration verified at f95bd440 on 2026-10-17; five revisions and one-contract M0 are authorized.
+Version and approval authority: [PRODUCT.md](PRODUCT.md). Sections 1–12 describe the original M0 proof. Section 13 records the campaign amendment authorized in issue #45.
 
 ## 1. Preferred approach
 
@@ -128,3 +128,11 @@ The same correction batch updates the existing exact public/solo catalog expecta
 The owner rejected M0's visual fidelity and explicitly requested restoration of the concept's look/feel. Reuse the existing UI implementation owner and bounded Astra designer; change only presentation markup/CSS/assets and relevant UI assertions. Keep the previous server/rules/storage code untouched. New representative runtime materials: original-reference-derived city/cabinet surround, transparent expressive courier portrait and blank worn-paper panel. Native board geometry, labels and interaction remain real elements.
 
 The designer identified a compositional scale regression in the old `100dvh - 510px` board rule. Restore a stable 550–600px desktop board and reflow inventory/tools and the paper/portrait/Execute column. Compare actual screenshots directly to the original reference using the binding criteria in DESIGN section8. Regenerate affected UI evidence and obtain applicable independent review/current-head CI; reuse unchanged authoritative-game evidence. No remaining contracts, bulk release artwork, runtime dependency or production action is authorized.
+
+## 13. Campaign implementation — issue #45
+
+The campaign replaces the proposed six-contract milestone with 40 static, curated boards and retains the original Borrowed Identity under its existing identity. A single catalogue supplies the fixed ports, socket layout, inventory and brief to the browser and authoritative rules. Development-only witnesses and route-search diagnostics verify intended outcomes, credible failures, shortest valid routes and symmetry duplicates. These checks measure constraints and feasible choices. Human difficulty and completion time require playtesting.
+
+The active contract uses the original authoritative attempt fields. The Room Durable Object retains a bounded record for each previously played contract, including only latest replay and aggregate results. A versioned contract identity and increasing selection revision reject stale A–B–A execution and competing tab selections. Both commands reuse existing exact-payload receipts and atomic game state persistence. Old saved rooms retain the original contract, flat attempts and latest replay.
+
+The editor remounts on authoritative selection changes, restores a matching local draft, and requires the pending execution to match the game, contract versions, selection revision and expected execution. Local completions are noncompetitive and scoped to a versioned contract. The normal Arcade browser, Worker and CI entry points validate the campaign. Mobile and desktop runtime captures cover the adjusted dossier and gameplay states against the original concept.

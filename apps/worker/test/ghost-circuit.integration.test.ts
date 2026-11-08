@@ -36,16 +36,67 @@ async function connect(session: RoomSessionResponse) {
 const command = (value: GhostCircuitCommand, requestId: string = crypto.randomUUID()): ClientMessage => ({ type: "game.command", requestId, payload: { command: value } });
 
 import { GHOST_WITNESS_PATHS, layoutForPath } from "../../../packages/games/src/ghost-circuit/witnesses";
-async function open(withGuest = false) {
+async function open(withGuest = false, archive = true) {
  const host = await create();
  const guest = withGuest ? await (await call(`/api/rooms/${host.roomCode}/join`, { displayName: "Guest" })).json<RoomSessionResponse>() : null;
  const client = await connect(host);
  await client.send({ type: "host.selectGame", requestId: crypto.randomUUID(), payload: { gameId: "ghost-circuit" } });
  await client.send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
+ if (archive) expect(await client.send(command(select((await stored(host)).game, "borrowed-identity")))).toMatchObject({ type: "command.ack" });
  return { host, client, guest };
 }
-const execute = (s: GhostCircuitState, layout = layoutForPath(GHOST_WITNESS_PATHS.basic)): GhostCircuitCommand => ({ type: "ghostCircuit.execute", gameInstanceId: s.gameInstanceId, contractId: "borrowed-identity", contentVersion: 1, rulesVersion: 1, expectedExecution: s.executions, layout });
+const select = (s: GhostCircuitState, contractId: string): GhostCircuitCommand => ({
+ type: "ghostCircuit.select", gameInstanceId: s.gameInstanceId, contractId, contentVersion: 1, rulesVersion: 1, selectionRevision: s.selectionRevision ?? 0
+});
+const execute = (s: GhostCircuitState, layout = layoutForPath(GHOST_WITNESS_PATHS.basic)): GhostCircuitCommand => ({
+ type: "ghostCircuit.execute", gameInstanceId: s.gameInstanceId, contractId: s.contractId, contentVersion: s.contentVersion,
+ rulesVersion: s.rulesVersion, selectionRevision: s.selectionRevision, expectedExecution: s.executions, layout
+});
 describe("Ghost Circuit authority and recovery", () => {
+ it("reconnects an original persisted room and keeps its attempts separate across campaign selection", async () => {
+  const { host, client } = await open(false, false);
+  const initial = (await stored(host)).game;
+  expect(initial).toMatchObject({ contractId: "first-contact", selectionRevision: 0, executions: 0 });
+  const legacy = { ...initial, contractId: "borrowed-identity" };
+  delete legacy.selectionRevision;
+  await runInDurableObject(stubFor(host), (_instance, ctx) => {
+   ctx.storage.sql.exec("UPDATE room_state SET json_value = ? WHERE key = 'game'", JSON.stringify({ gameId: "ghost-circuit", state: legacy }));
+  });
+  client.socket.close();
+  await evictDurableObject(stubFor(host));
+  const recovered = await connect(host);
+  const oldExecute = command(execute(legacy), "original-client");
+  expect(await recovered.send(oldExecute)).toMatchObject({ type: "command.ack" });
+  const beforeSwitch = (await stored(host)).game;
+  expect(beforeSwitch).toMatchObject({ contractId: "borrowed-identity", executions: 1, firstSuccess: 1, bestRating: "Basic" });
+  const next = command(select(beforeSwitch, "first-contact"), "choose-first-contact");
+  expect(await recovered.send(next)).toMatchObject({ type: "command.ack" });
+  expect(await recovered.send(next)).toMatchObject({ type: "command.ack" });
+  await recovered.wait(m => m.type === "game.state");
+  expect(recovered.view()!.payload).toMatchObject({ public: { contractId: "first-contact", selectionRevision: 1, executions: 0, latest: null, completedContractIds: ["borrowed-identity"] } });
+  expect(recovered.view()!.payload).not.toHaveProperty("public.otherContracts");
+  expect(await recovered.send(command(select(beforeSwitch, "borrowed-pass"), "choose-first-contact"))).toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+  const first = (await stored(host)).game;
+  expect(await recovered.send(command(execute(first, [])))).toMatchObject({ type: "command.ack" });
+  expect(await recovered.send(command(select(first, "borrowed-identity")))).toMatchObject({ type: "command.ack" });
+  const returned = (await stored(host)).game;
+  expect(returned).toMatchObject({ contractId: "borrowed-identity", selectionRevision: 2, executions: 1, firstSuccess: 1, bestRating: "Basic", latest: beforeSwitch.latest });
+  expect(await recovered.send(command(execute(first, [])))).toMatchObject({ type: "error", payload: { code: "STALE_PHASE" } });
+  expect(await recovered.send(command(execute(beforeSwitch, [])))).toMatchObject({ type: "error", payload: { code: "STALE_PHASE" } });
+  expect(await recovered.send(command(select(returned, "first-contact")))).toMatchObject({ type: "command.ack" });
+  expect(await recovered.send(command(execute(first, [])))).toMatchObject({ type: "error", payload: { code: "STALE_PHASE" } });
+  expect((await stored(host)).game).toMatchObject({ contractId: "first-contact", selectionRevision: 3, executions: 1 });
+ });
+ it("accepts only one concurrent switch and rejects unauthorized or unknown selections", async () => {
+  const { host, client, guest } = await open(true, false);
+  const tab = await connect(host), other = await connect(guest!), initial = (await stored(host)).game;
+  expect(await other.send(command(select(initial, "borrowed-pass")))).toMatchObject({ type: "error", payload: { code: "PLAYER_NOT_ACTIVE" } });
+  expect(await client.send(command(select(initial, "unlisted")))).toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+  const replies = await Promise.all([client.send(command(select(initial, "borrowed-pass"))), tab.send(command(select(initial, "switchback-mail")))]);
+  expect(replies.filter(reply => reply.type === "command.ack")).toHaveLength(1);
+  expect(replies.filter(reply => reply.type === "error")).toMatchObject([{ payload: { code: "STALE_PHASE" } }]);
+  expect((await stored(host)).game).toMatchObject({ selectionRevision: 1, executions: 0 });
+ });
  it("persists before ack, restores across DO eviction, refreshes exact duplicate, rejects altered/stale runs and continues improvement", async () => {
   const { host, client } = await open(); const before = (await stored(host)).game;
   const run = command(execute(before), "run-once");
