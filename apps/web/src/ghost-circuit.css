@@ -101,9 +101,10 @@
  .gc-heading p {font-size:8px;letter-spacing:.08em}
  .gc-heading h1 {font-size:23px}
  .gc-heading h1 span {display:none}
- .gc-contract-picker {display:grid;grid-template-columns:max-content minmax(0,1fr);grid-column:1/-1;grid-row:2}
- /* Bound the native control's text on narrow WebKit viewports. The full title is in the dossier. */
- .gc-contract-picker select {width:100%;overflow:hidden;text-overflow:ellipsis}
+ .gc-contract-picker {position:relative;display:grid;grid-template-columns:max-content minmax(0,1fr);grid-column:1/-1;grid-row:2}
+ /* Mobile WebKit's themed select overrides its minimum touch size. Keep the native picker and draw its arrow. */
+ .gc-contract-picker select {appearance:none;width:100%;padding-inline-end:28px;overflow:hidden;text-overflow:ellipsis}
+ .gc-contract-picker::after {content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;border:solid var(--gc-paper);border-width:0 2px 2px 0;transform:translateY(-70%) rotate(45deg);pointer-events:none}
  .gc-counter {grid-column:2;grid-row:1;flex-direction:column;gap:0;padding:0;font-size:9px}
  .gc-counter strong {font-size:23px}
  .gc-mission {

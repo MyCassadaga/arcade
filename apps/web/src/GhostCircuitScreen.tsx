@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { GHOST_CAMPAIGN, GHOST_CHAPTERS, LEGACY_GHOST_CONTRACT, coordinate, getGhostContract, piecePorts } from "@team-arcade/games/ghost-circuit";
 import type { ClientMessage, GhostDirection, GhostLayout, GhostPiece, TypedGameViewerState } from "@team-arcade/shared";
-import { readGhostDraft, readGhostSummary, saveGhostDraft, saveGhostSummary, storageAvailable } from "./ghost-circuit-storage";
+import { readGhostDraft, readGhostSummary, saveGhostDraft, saveGhostSummary, storageAvailable, type GhostDraftMemory } from "./ghost-circuit-storage";
 import "./ghost-circuit.css";
 type View = Extract<TypedGameViewerState, { gameId: "ghost-circuit" }>;
 interface Props { game: View; connected: boolean; commandPending: boolean; send: (message: ClientMessage) => boolean; backToArcade: () => boolean }
@@ -13,6 +13,9 @@ const allContracts = [...GHOST_CAMPAIGN, LEGACY_GHOST_CONTRACT];
 const identity = ({ id, contentVersion, rulesVersion }: (typeof allContracts)[number]) => ({ contractId: id, contentVersion, rulesVersion });
 export function GhostCircuitScreen(props: Props) {
  const view = props.game.public;
+ // GameScreen keys this component by game instance. Keep up to one draft per
+ // contract here so switching editors does not require working browser storage.
+ const drafts = useRef<GhostDraftMemory>(new Map());
  const heading = useRef<HTMLHeadingElement>(null), previous = useRef(view.selectionRevision);
  useEffect(() => {
   if (view.selectionRevision !== previous.current) {
@@ -20,9 +23,12 @@ export function GhostCircuitScreen(props: Props) {
    heading.current?.focus();
   }
  }, [view.selectionRevision]);
- return <GhostCircuitEditor key={`${view.contractId}:${view.selectionRevision}`} {...props} heading={heading} />;
+ return <GhostCircuitEditor key={`${view.contractId}:${view.selectionRevision}`} {...props} heading={heading} drafts={drafts.current} />;
 }
-function GhostCircuitEditor({ game, connected, commandPending, send, backToArcade, heading }: Props & { heading: RefObject<HTMLHeadingElement | null> }) {
+function GhostCircuitEditor({ game, connected, commandPending, send, backToArcade, heading, drafts }: Props & {
+ heading: RefObject<HTMLHeadingElement | null>;
+ drafts: GhostDraftMemory;
+}) {
  const view = game.public;
  const contract = getGhostContract(view.contractId);
  const { nodes, sockets, inventory } = contract;
@@ -35,7 +41,7 @@ function GhostCircuitEditor({ game, connected, commandPending, send, backToArcad
   return recommended?.id === id ? " · Recommended" : "";
  };
  const next = contract.number ? GHOST_CAMPAIGN.find(item => item.number === contract.number + 1) : recommended;
- const [restored] = useState(() => readGhostDraft(view));
+ const [restored] = useState(() => readGhostDraft(view, drafts));
  const [layout, setLayout] = useState<GhostLayout>(() => (restored.draft?.execution === view.executions ? restored.draft.layout : undefined) ?? view.latest?.layout ?? []);
  const [pending, setPending] = useState(() => restored.draft?.pending && restored.draft.pending.command.expectedExecution === view.executions ? restored.draft.pending : null);
  const [undo, setUndo] = useState<GhostLayout[]>([]), [redo, setRedo] = useState<GhostLayout[]>([]);
@@ -50,9 +56,12 @@ function GhostCircuitEditor({ game, connected, commandPending, send, backToArcad
  const locked = !!pending || commandPending || replaying;
  const displayedLayout = replaying ? view.latest?.layout ?? layout : layout;
  useEffect(() => {
-  const ok = saveGhostDraft(view, { version: 1, contentVersion: view.contentVersion, rulesVersion: view.rulesVersion, execution: view.executions, layout, pending });
+  if (view.executions !== observed.current) return;
+  const ok = saveGhostDraft(view, {
+   version: 1, contentVersion: view.contentVersion, rulesVersion: view.rulesVersion, execution: view.executions, layout, pending
+  }, drafts);
   if (!ok) setSaved(false);
- }, [layout, pending, view]);
+ }, [drafts, layout, pending, view]);
  useEffect(() => {
   if (!saveGhostSummary(view)) setSaved(false); setSummary(readGhostSummary(view));
   if (pending && view.executions > pending.command.expectedExecution) setPending(null);
@@ -90,7 +99,8 @@ function GhostCircuitEditor({ game, connected, commandPending, send, backToArcad
  const execute = () => {
   if (!connected || replaying || commandPending) return;
   const run = pending ?? { requestId: crypto.randomUUID(), command: { type: "ghostCircuit.execute" as const, gameInstanceId: view.gameInstanceId, contractId: view.contractId, contentVersion: view.contentVersion, rulesVersion: view.rulesVersion, selectionRevision: view.selectionRevision, expectedExecution: view.executions, layout: structuredClone(layout) } };
-  setPending(run); saveGhostDraft(view, { version: 1, contentVersion: view.contentVersion, rulesVersion: view.rulesVersion, execution: view.executions, layout, pending: run });
+  setPending(run);
+  saveGhostDraft(view, { version: 1, contentVersion: view.contentVersion, rulesVersion: view.rulesVersion, execution: view.executions, layout, pending: run }, drafts);
   send({ type: "game.command", requestId: run.requestId, payload: { command: run.command } }); setStatus("Waiting for the server. Retry preserves the same execution request.");
  };
  const result = view.latest?.result;

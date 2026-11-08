@@ -104,6 +104,11 @@ test("Ghost Circuit: keyboard edits, authoritative failure/correction/improvemen
 test("Ghost Circuit: unavailable storage still launches and reduced-motion execution remains usable", async ({ page }) => {
  await page.emulateMedia({ reducedMotion: "reduce" }); await page.addInitScript(() => { for (const method of ["getItem", "setItem", "removeItem"] as const) Storage.prototype[method] = () => { throw Error("Storage denied"); }; });
  await page.goto("/"); await page.getByRole("button", { name: "Play Ghost Circuit solo" }).click(); await expect(page.getByText(/Progress won't be saved/)).toBeVisible();
+ await page.getByRole("button", { name: /^B3 empty socket/ }).click();
+ await selectContract(page, "borrowed-pass", "Borrowed Pass");
+ await page.getByRole("button", { name: /^B2 empty socket/ }).click();
+ await selectContract(page, "first-contact", "First Contact");
+ await expect(page.getByRole("button", { name: /^B3 straight/ })).toBeVisible();
  await page.getByRole("button", { name: "EXECUTE CIRCUIT →" }).click(); await expect(page.locator(".gc-status")).toContainText("Missing cable"); await expect(page.locator(".gc-counter strong")).toHaveText("1"); await page.getByRole("button", { name: "Return to edit" }).click(); await page.getByRole("button", { name: "Back to arcade", exact: true }).click(); await expect(page.getByRole("button", { name: "Play Ghost Circuit solo" })).toBeVisible();
 });
 test("Ghost Circuit: expired authority clears while noncompetitive completion history survives", async ({ page }) => {
@@ -128,6 +133,10 @@ test("Ghost Circuit campaign opens on a real tutorial and preserves independent 
  await expect(picker.locator("optgroup")).toHaveCount(6);
  await expect(picker.locator("option")).toHaveCount(41);
  await expect(picker.locator("option:checked")).toContainText("Tutorial");
+ await picker.focus();
+ await picker.press("2");
+ await expect(page.locator(".gc-mission h2")).toHaveText("Borrowed Pass");
+ await selectContract(page, "first-contact", "First Contact");
  const starter = CAMPAIGN_WITNESSES[0]!;
  await placeWitness(page, starter.full!, getGhostContract(starter.contractId));
  await page.getByRole("button", { name: "EXECUTE CIRCUIT →" }).click();

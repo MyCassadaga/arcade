@@ -15,16 +15,20 @@ export interface GhostDraft {
  layout: GhostLayout;
  pending: { requestId: string; command: GhostCircuitExecute } | null;
 }
+export type GhostDraftMemory = Map<string, GhostDraft>;
 interface GhostSummary { version: 1; contentVersion: number; rulesVersion: 1; completed: true; bestRating: GhostRating }
 
-export function readGhostDraft(view: GhostCircuitPublicView): { draft: GhostDraft | null; notice: string } {
+export function readGhostDraft(view: GhostCircuitPublicView, memory?: GhostDraftMemory): { draft: GhostDraft | null; notice: string } {
  try {
   const legacy = view.contractId === LEGACY_GHOST_CONTRACT.id && view.selectionRevision === 0;
-  const raw = localStorage.getItem(draftKey(view)) ??
-   (legacy ? localStorage.getItem(`${prefix}:draft:${view.gameInstanceId}`) : null);
-  if (!raw) return { draft: null, notice: "" };
-  if (raw.length > 12000) throw Error();
-  const d = JSON.parse(raw) as GhostDraft;
+  let d = memory?.get(draftKey(view));
+  if (!d) {
+   const raw = localStorage.getItem(draftKey(view)) ??
+    (legacy ? localStorage.getItem(`${prefix}:draft:${view.gameInstanceId}`) : null);
+   if (!raw) return { draft: null, notice: "" };
+   if (raw.length > 12000) throw Error();
+   d = JSON.parse(raw) as GhostDraft;
+  }
   if (d.version !== 1 || d.contentVersion !== view.contentVersion || d.rulesVersion !== view.rulesVersion ||
       !Number.isSafeInteger(d.execution) || d.execution < 0 || d.execution > view.executions) throw Error();
   validateGhostLayout(d.layout, getGhostContract(view.contractId));
@@ -43,8 +47,10 @@ export function readGhostDraft(view: GhostCircuitPublicView): { draft: GhostDraf
  } catch { return { draft: null, notice: "Saved draft is unavailable or incompatible. Starting from the server layout; editing still works." }; }
 }
 
-export function saveGhostDraft(view: DraftIdentity, draft: GhostDraft): boolean {
- try { localStorage.setItem(draftKey(view), JSON.stringify(draft)); return true; } catch { return false; }
+export function saveGhostDraft(view: DraftIdentity, draft: GhostDraft, memory?: GhostDraftMemory): boolean {
+ const key = draftKey(view);
+ memory?.set(key, draft);
+ try { localStorage.setItem(key, JSON.stringify(draft)); return true; } catch { return false; }
 }
 
 export function readGhostSummary(contract: ContractIdentity): GhostSummary | null {
