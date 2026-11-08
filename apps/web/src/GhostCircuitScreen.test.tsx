@@ -1,13 +1,17 @@
 import { fireEvent, render, screen, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GhostCircuitScreen } from "./GhostCircuitScreen";
-import { createGhostCircuitState, getGhostCircuitPublicView, handleGhostCircuitCommand } from "@team-arcade/games/ghost-circuit";
+import { getGhostCircuitPublicView, handleGhostCircuitCommand, LEGACY_GHOST_CONTRACT, type GhostCircuitState } from "@team-arcade/games/ghost-circuit";
 import { GHOST_WITNESS_PATHS, layoutForPath } from "../../../packages/games/src/ghost-circuit/witnesses";
-import { ghostDraftKey, ghostSummaryKey, readGhostDraft, saveGhostDraft, saveGhostSummary } from "./ghost-circuit-storage";
-import type { ClientMessage, GhostCircuitCommand, TypedGameViewerState } from "@team-arcade/shared";
-const state = () => createGhostCircuitState({ players: [{ id: "courier", displayName: "Courier", isHost: true, score: 0, connected: true }], random: () => 0, now: 0 }, "00000000-0000-4000-8000-000000000001");
+import { readGhostDraft, saveGhostDraft, saveGhostSummary } from "./ghost-circuit-storage";
+import type { ClientMessage, GhostCircuitExecute, TypedGameViewerState } from "@team-arcade/shared";
+const state = (): GhostCircuitState => ({
+ phase: "playing" as const, gameInstanceId: "00000000-0000-4000-8000-000000000001", activePlayerId: "courier",
+ contractId: LEGACY_GHOST_CONTRACT.id, contentVersion: 1, rulesVersion: 1 as const,
+ executions: 0, firstSuccess: null, bestRating: null, latest: null
+});
 const game = (s = state()): Extract<TypedGameViewerState, { gameId: "ghost-circuit" }> => ({ gameId: "ghost-circuit", phase: "playing", public: getGhostCircuitPublicView(s), private: { canExecute: true } });
-const run = (layout = layoutForPath(GHOST_WITNESS_PATHS.basic)): GhostCircuitCommand => ({ type: "ghostCircuit.execute", gameInstanceId: state().gameInstanceId, contractId: "borrowed-identity", contentVersion: 1, rulesVersion: 1, expectedExecution: 0, layout });
+const run = (layout = layoutForPath(GHOST_WITNESS_PATHS.basic)): GhostCircuitExecute => ({ type: "ghostCircuit.execute", gameInstanceId: state().gameInstanceId, contractId: "borrowed-identity", contentVersion: 1, rulesVersion: 1, expectedExecution: 0, layout });
 beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 describe("Ghost Circuit editor, replay and local recovery", () => {
  it("supports placement, rotate/remove, keyboard navigation and exact undo/redo", () => {
@@ -58,19 +62,55 @@ describe("Ghost Circuit editor, replay and local recovery", () => {
   expect(send).not.toHaveBeenCalled();
  });
  it("recovers corrupt/version mismatched drafts and denied storage without aborting editing", () => {
-  localStorage.setItem(ghostDraftKey(state().gameInstanceId), "{broken"); expect(readGhostDraft(game().public).draft).toBeNull();
-  localStorage.setItem(ghostDraftKey(state().gameInstanceId), JSON.stringify({ version: 2 })); expect(readGhostDraft(game().public).draft).toBeNull();
+  localStorage.setItem(`team-arcade:ghost-circuit:draft:${state().gameInstanceId}`, "{broken"); expect(readGhostDraft(game().public).draft).toBeNull();
+  localStorage.setItem(`team-arcade:ghost-circuit:draft:${state().gameInstanceId}`, JSON.stringify({ version: 2 })); expect(readGhostDraft(game().public).draft).toBeNull();
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw Error("denied"); }); vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw Error("denied"); });
   render(<GhostCircuitScreen game={game()} connected commandPending={false} send={() => true} backToArcade={() => true} />);
   expect(screen.getByText(/Progress won't be saved/)).toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: /B1 empty socket/ })); expect(screen.getByRole("button", { name: /B1 straight/ })).toBeInTheDocument();
  });
+ it.each(["denied", "quota"] as const)("preserves the newest draft when switching with %s storage", mode => {
+  const original = state(), send = vi.fn<(message: ClientMessage) => boolean>(() => true);
+  const props = { connected: true, commandPending: false, send, backToArcade: () => true };
+  if (mode === "denied") {
+   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+  }
+  const view = render(<GhostCircuitScreen {...props} game={game(original)} />);
+  if (mode === "quota") {
+   expect(readGhostDraft(game(original).public).draft?.layout).toEqual([]);
+   const setItem = localStorage.setItem.bind(localStorage);
+   vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, value) => {
+    if (key.includes(":draft:")) throw new DOMException("full", "QuotaExceededError");
+    setItem(key, value);
+   });
+  }
+
+  function choose(id: string, current: GhostCircuitState) {
+   fireEvent.change(screen.getByRole("combobox", { name: "Contract" }), { target: { value: id } });
+   const message = send.mock.lastCall?.[0];
+   if (message?.type !== "game.command" || message.payload.command.type !== "ghostCircuit.select") throw new Error("Missing selection");
+   const next = handleGhostCircuitCommand(current, message.payload.command, "courier").state;
+   view.rerender(<GhostCircuitScreen {...props} game={game(next)} />);
+   return next;
+  }
+  fireEvent.click(screen.getByRole("button", { name: /^B1 empty socket/ }));
+  const tutorial = choose("first-contact", original);
+  fireEvent.click(screen.getByRole("button", { name: /^B3 empty socket/ }));
+  const returned = choose("borrowed-identity", tutorial);
+  expect(screen.getByRole("button", { name: /^B1 straight, ports E W/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  expect(screen.getByText(/Progress won't be saved/)).toBeInTheDocument();
+  choose("first-contact", returned);
+  expect(screen.getByRole("button", { name: /^B3 straight, ports E W/ })).toBeInTheDocument();
+  if (mode === "quota") expect(readGhostDraft(game(returned).public).draft?.layout).toEqual([]);
+ });
  it("keeps only nonauthoritative versioned best history across a new server session", () => {
   const accepted = handleGhostCircuitCommand(state(), run(layoutForPath(GHOST_WITNESS_PATHS.full)), "courier").state; expect(saveGhostSummary(accepted)).toBe(true);
-  const summary: unknown = JSON.parse(localStorage.getItem(ghostSummaryKey)!); expect(summary).toEqual({ version: 1, contentVersion: 1, rulesVersion: 1, completed: true, bestRating: "Full Haul" });
+  const summary: unknown = JSON.parse(localStorage.getItem("team-arcade:ghost-circuit:summary:borrowed-identity:1:1")!); expect(summary).toEqual({ version: 1, contentVersion: 1, rulesVersion: 1, completed: true, bestRating: "Full Haul" });
   render(<GhostCircuitScreen game={game()} connected commandPending={false} send={() => true} backToArcade={() => true} />); expect(screen.getByText(/New server session/)).toBeInTheDocument(); expect(screen.getByRole("button", { name: /B1 empty socket/ })).toBeInTheDocument();
  });
  it("reconciles an accepted pending run with server layout and clears obsolete authority", () => {
-  saveGhostDraft(state().gameInstanceId, { version: 1, contentVersion: 1, rulesVersion: 1, execution: 0, layout: [], pending: { requestId: "pending", command: run([]) } });
+  saveGhostDraft(game().public, { version: 1, contentVersion: 1, rulesVersion: 1, execution: 0, layout: [], pending: { requestId: "pending", command: run([]) } });
   const accepted = handleGhostCircuitCommand(state(), run(), "courier").state;
   render(<GhostCircuitScreen game={game(accepted)} connected commandPending={false} send={() => true} backToArcade={() => true} />);
   expect(screen.getByRole("button", { name: /B1 straight/ })).toBeInTheDocument(); expect(screen.getByRole("button", { name: "EXECUTE CIRCUIT →" })).toBeEnabled();

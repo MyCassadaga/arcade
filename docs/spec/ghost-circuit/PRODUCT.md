@@ -6,13 +6,13 @@ This is the sole approval and version record for this package.
 
 | Field | Record |
 |---|---|
-| Version | 0.2.1 |
-| Status | M0 visual correction authorized; visual acceptance pending |
-| Date | 2026-10-17 |
-| Approved package baseline | 0.2.0: five review revisions approved on 2026-10-17; one-contract M0 proof authorized; six-contract expansion remains gated |
+| Version | 0.3.0 |
+| Status | Forty-contract campaign and mobile dossier correction authorized for implementation |
+| Date | 2026-11-08 |
+| Approved package baseline | 0.2.0: five review revisions and the one-contract M0 proof approved on 2026-10-17 |
 | Established direction | Rewire-the-network puzzle; drawn cyberpunk art; arrange, execute, learn, improve |
-| Product / design / technical decisions | Five revisions approved; remaining six-contract details are proposed and gated on M0 |
-| Implementation authorization | One-contract M0 proof authorized by “Make all the changes to docs as needed and then proceed.” No release authority. |
+| Product / design / technical decisions | Existing rules and art direction, with campaign progression and mobile containment as recorded in section 10 |
+| Implementation authorization | Issue #45 records the request to polish the game and curate 30–50 challenging levels, scoped to 40 contracts. Release requires separate authority. |
 | Repository | Team Arcade (`MyCassadaga/arcade`); inspected 2026-10-17 at f95bd440 |
 | Handoff | Imported at docs/spec/ghost-circuit; bounded AGENTS pointer; M0 execution tracked in GitHub issue |
 
@@ -30,11 +30,11 @@ A single-player, deterministic puzzle game. A ghost courier follows the route as
 
 Each contract supplies a fixed board and finite inventory of cable pieces. There is no random draw during play. Rearrange freely before execution. Failures give exact, understandable feedback. Retry without a life limit. Attempts are tracked separately from the quality of the successful hack.
 
-First usable content: six authored contracts, including two onboarding contracts and four increasingly demanding challenges. Include contract selection, board/help, execution/replay, result/share, and versioned local noncompetitive history alongside server-authoritative active play. A daily rotation is deferred. Reuse the existing solo-game launch and Worker/Durable Object transport; no new service.
+First usable content: 40 authored contracts in five chapters, starting with two concise onboarding boards and progressing through increasingly demanding route choices. Include contract selection, board/help, execution/replay, result/share, and versioned local noncompetitive history alongside server-authoritative active play. Reuse the existing solo-game launch and Worker/Durable Object transport.
 
 ## 3. Requirements
 
-M0 portions are implemented for review; requirements spanning M1–M3 and the six-contract release remain incomplete. The five review revisions and M0 scope are approved; the complete six-contract release remains gated on M0 evaluation.
+The M0 proof established the rules and direction. Section 10 records the authorized campaign scope.
 
 | ID | Observable behavior | Purpose | Priority | Source | Decision | Acceptance | Dependencies |
 |---|---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ M0 portions are implemented for review; requirements spanning M1–M3 and the si
 | REQ-004 | Allow basic success and a higher-value route on the same board | Reward discovery beyond completion | Required | User requested multiple ways and cleverness | Established direction / details proposed | Every non-tutorial contract has a validated archive escape and a distinct higher-rated completion; no unexplained cleverness bonus | 003 |
 | REQ-005 | Report failures, preserve the layout, and support immediate edits/retries | Productive experimentation | Required | Afterprint loop | Proposed | Missing connection, blocked cell, boundary exit, detection and invalid exit each identify the responsible cell and reason; cycle detection is defensive malformed-content validation; retry restores pre-run simulation state | 002,003 |
 | REQ-006 | Show Basic/Full Haul rating, optional Ghost achievement and execution count; copy a spoiler-free result | Comparable achievement | Required | User's Afterprint sharing reference | Proposed | Shared text includes contract and rules version, rating and attempts, but no path; copy failure exposes selectable text | 004,005 |
-| REQ-007 | Deliver six authored, validated contracts with staged teaching | Complete playable content | Required | AI scope proposal | Proposed | Two tutorials plus four challenges each have a known legal solution and an authored teaching/difficulty note; challenge claims are tested | 001–005 |
+| REQ-007 | Deliver 40 authored, selectable contracts with staged teaching | Complete playable content | Required | Issue #45 | Authorized | Five chapters with two introductory boards; each contract has a validated intended escape and a teaching or difficulty note, with distinct Basic and Full Haul routes on every challenge | 001–005 |
 | REQ-008 | Reproduce the illustrated cyberpunk identity with clear gameplay overlays | Deliver the desired aesthetic | Required | User response to concept | Established direction / production details proposed | Runtime screenshots and motion review satisfy DESIGN acceptance on desktop and phone; no full-screen flattened screenshot used as the game | 001–003 |
 | REQ-009 | Support mouse, keyboard and touch, including reduced motion and non-color cues | Accessible interaction | Required | AI proposal | Proposed | Complete a contract with each input; no hover-only action; labels distinguish security/data/routes without color | 001,002,008 |
 | REQ-010 | Keep active attempts/results server-authoritative; preserve local editor state and a noncompetitive completion/best-rating summary with version checks | Resume and recover | Required | AI proposal | Proposed | Reload restores the current server session plus valid editor state. A local completion/best-rating summary survives room expiry but never authorizes play or scores. Corrupt/version-mismatched/unavailable storage offers recovery; in-memory editing remains possible. | 005,006 |
@@ -64,7 +64,7 @@ Select contract → brief and optional tutorial → arrange → execute → succ
 
 Count one execution when the server accepts a fresh simulation command. Replaying a recorded run, stepping it, or validation refusing malformed content does not count. Aborting a run already started still counts. Failed paths are legitimate executions. No penalty for thinking time or editing.
 
-End of first version: six completable contracts with distinct solutions, clear rules, final art for the shipped content, tested persistence and input, and integration through the actual Arcade workflow.
+End of first version: 40 completable contracts, clear rules, the approved illustrated visual direction, tested persistence and input, and integration through the actual Arcade workflow.
 
 ## 5. Success and quality targets — proposed
 
@@ -81,9 +81,9 @@ End of first version: six completable contracts with distinct solutions, clear r
 | ID | Type | Statement / next action | Blocks |
 |---|---|---|---|
 | A1 | Verified | Verified React/Vite + TypeScript workspaces and Cloudflare Worker/Durable Object architecture; docs/ARCHITECTURE.md and package.json inspected at f95bd440 | Stack choice and integration |
-| A2 | Proposed | Finite straight/elbow inventory and single signal are enough for the first six puzzles | Test in authorized M0 before expansion |
-| U1 | Unresolved | Borrowed Identity illustration and textual sketch are not proven boards; author exact ports/inventory and validate | Shipping this contract |
-| U2 | Unresolved | Five revisions and one-contract M0 authorized 2026-10-17; six-contract expansion and production release remain separate | Implementation |
+| A2 | Validated mechanically | Finite straight/elbow inventory and a single signal support the authored campaign under route and witness checks | Human difficulty playtest |
+| U1 | Resolved in M0 | The original Borrowed Identity has an implemented board and verified witnesses | None |
+| U2 | Resolved for implementation | Issue #45 authorizes the 40-contract campaign. Production release requires separate authority | Release |
 | U3 | Unresolved | Asset-production tooling, rights, hosting impact and target devices require verification | Production assets/release |
 | R1 | Risk | Routing alone may become routine; test scarcity plus order-dependent state before adding mechanics | M0 progression |
 | R2 | Risk | Ink texture may muddy ports at phone size; use separate crisp path overlays | Visual proof |
@@ -112,3 +112,9 @@ Owner feedback: “What happened to our concept art? Was so cute. This is kinda 
 The approved concept is the visual acceptance target for composition, drawn material, atmosphere and character prominence. Merely reusing its palette or tiny hardware sprites is insufficient. The M0 must already show the illustrated city/cabinet surroundings, warm paper mission dossier, prominent cute courier during planning, physical inventory cards and dominant ochre Execute plate. Final-release polish is not an excuse to omit this identity from M0.
 
 Astra's bounded correction keeps a 550–600px desktop board, repositions controls to preserve that scale, and supplies only the three representative illustration/material assets needed by this proof. No gameplay, server, storage, provider, dependency or release authority changes. Existing high-risk behavior evidence can be reused where source is byte-identical; affected visual/interaction evidence and code review must be refreshed. The user has not accepted the corrected visuals yet; show actual runtime comparison before claiming visual success.
+
+## 10. Campaign and mobile polish amendment — 2026-11-08 (0.3.0)
+
+[Issue #45](https://github.com/MyCassadaga/arcade/issues/45) records the request to correct the mobile mission spill, polish the game, and provide 30–50 carefully designed puzzles with meaningful difficulty. The agreed implementation target is 40. This replaces the proposed six-contract milestone. Existing Borrowed Identity sessions and local completion history keep their original identity and versions.
+
+The campaign uses the established 6×6 rules and art. Difficulty comes from competing routes, security order, limited inventory, constrained geometry and optional caches. Two onboarding boards introduce planning and security, then challenges require distinct Basic and Full Haul routes. Difficulty claims describe observable choices and constraints; human playtest ratings remain a separate outcome. The dossier preserves the paper, courier and cabinet composition while the mobile text wraps inside the illustrated paper.
