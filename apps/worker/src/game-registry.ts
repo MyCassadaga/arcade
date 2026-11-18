@@ -1,3 +1,5 @@
+import { createTwoTruthsState, handleTwoTruthsCommand, getTwoTruthsPublicView, getTwoTruthsPrivateView, type TwoTruthsState } from "@team-arcade/games";
+import { twoTruthsCommandSchema, type PlayerView } from "@team-arcade/shared";
 import { createGhostCircuitState, handleGhostCircuitCommand, getGhostCircuitPublicView, type GhostCircuitState } from "@team-arcade/games";
 import { ghostCircuitCommandSchema } from "@team-arcade/shared";
 import { createStarGardenState, handleStarGardenCommand, getStarGardenPublicView, getStarGardenPrivateView, type StarGardenState } from "@team-arcade/games";
@@ -22,6 +24,7 @@ import {
 import type { z } from "zod";
 
 interface PartyStates {
+  "two-truths": TwoTruthsState;
   "ghost-circuit": GhostCircuitState;
   "star-garden": StarGardenState;
   "who-said-that": WhoSaidThatState;
@@ -35,7 +38,7 @@ export type StoredPartyGame = { [K in PartyGameId]: { gameId: K; state: PartySta
 type PartyView = Exclude<TypedGameViewerState, { gameId: "system-crawl" }>;
 
 interface BoundAdapter {
-  command(command: GameCommand, actorPlayerId: string, now: number, random: () => number, isHost?: boolean): GameResult<StoredPartyGame>;
+  command(command: GameCommand, actorPlayerId: string, now: number, random: () => number, isHost?: boolean, players?: readonly PlayerView[]): GameResult<StoredPartyGame>;
   advance(now: number, random: () => number): GameResult<StoredPartyGame>;
   project(viewer: ViewerContext): PartyView;
 }
@@ -45,7 +48,7 @@ interface BoundAdapter {
 function adapter<S, C>(definition: {
   create(context: GameContext): S;
   schema: z.ZodType<C>;
-  command(state: S, command: C, actor: string, now: number, random: () => number, isHost: boolean): GameResult<S>;
+  command(state: S, command: C, actor: string, now: number, random: () => number, isHost: boolean, players: readonly PlayerView[]): GameResult<S>;
   advance(state: S, random: () => number, now: number): GameResult<S>;
   store(state: S): StoredPartyGame;
   project(state: S, viewer: ViewerContext): PartyView;
@@ -56,10 +59,10 @@ function adapter<S, C>(definition: {
   return {
     create: (context: GameContext) => definition.store(definition.create(context)),
     bind: (state: S): BoundAdapter => ({
-      command(command, actor, now, random, isHost = false) {
+      command(command, actor, now, random, isHost = false, players = []) {
         const parsed = definition.schema.safeParse(command);
         if (!parsed.success) throw new GameRuleError("INVALID_COMMAND", "That command belongs to a different game.");
-        return wrap(definition.command(state, parsed.data, actor, now, random, isHost));
+        return wrap(definition.command(state, parsed.data, actor, now, random, isHost, players));
       },
       advance: (now, random) => wrap(definition.advance(state, random, now)),
       project: (viewer) => definition.project(state, viewer)
@@ -68,6 +71,13 @@ function adapter<S, C>(definition: {
 }
 
 export const GAME_REGISTRY = {
+  "two-truths": adapter({
+    create: context => createTwoTruthsState(context, crypto.randomUUID()), schema: twoTruthsCommandSchema,
+    command: (state, command, actor, _now, random, isHost, players) => handleTwoTruthsCommand(state, command, actor, isHost, players, random),
+    advance: () => { throw new GameRuleError("INVALID_PHASE", "Use the current Two Truths game controls."); },
+    store: state => ({ gameId: "two-truths", state }),
+    project: (state, viewer) => ({ gameId: "two-truths", phase: state.phase, public: getTwoTruthsPublicView(state), private: getTwoTruthsPrivateView(state, viewer.playerId) })
+  }),
   "ghost-circuit": adapter({
     create: context => createGhostCircuitState(context, crypto.randomUUID()), schema: ghostCircuitCommandSchema,
     command: handleGhostCircuitCommand, advance: () => { throw new GameRuleError("INVALID_PHASE", "Execute a circuit to continue."); },
@@ -125,6 +135,7 @@ export function isRegisteredGame(id: string): id is PartyGameId {
 
 export function bindGame(game: StoredPartyGame): BoundAdapter {
   switch (game.gameId) {
+    case "two-truths": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "ghost-circuit": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "star-garden": return GAME_REGISTRY[game.gameId].bind(game.state);
     case "who-said-that": return GAME_REGISTRY[game.gameId].bind(game.state);

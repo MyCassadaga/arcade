@@ -51,7 +51,7 @@ describe("shared protocol validation", () => {
   });
 
   it("publishes only public games in the arcade catalog", () => {
-    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["ghost-circuit", "who-said-that", "impostor", "categories", "afterprint", "shirt-fight", "star-garden"]);
+    expect(PUBLIC_GAME_CATALOG.map((game) => game.id)).toEqual(["ghost-circuit", "who-said-that", "impostor", "categories", "afterprint", "shirt-fight", "star-garden", "two-truths"]);
     expect(PUBLIC_GAME_CATALOG.every((game) => game.availability === "public")).toBe(true);
     expect(SINGLE_PLAYER_GAME_CATALOG.map((game) => game.id)).toEqual(["ghost-circuit", "afterprint", "star-garden"]);
     expect(SINGLE_PLAYER_GAME_CATALOG.every((game) => game.playMode === "single-player")).toBe(true);

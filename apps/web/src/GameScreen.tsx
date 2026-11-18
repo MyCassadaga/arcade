@@ -1,3 +1,4 @@
+import { TwoTruthsScreen } from "./TwoTruthsScreen";
 import { GhostCircuitScreen } from "./GhostCircuitScreen";
 import { StarGardenScreen } from "./StarGardenScreen";
 import { PhaseCard, AnswerForm, TextCommandForm, Progress, Waiting, PrimaryAction, Points, ScoreBoard, GameResults, playerName } from "./game-presentation";
@@ -39,6 +40,8 @@ export function GameScreen({ game, room, selfId, roomCode, sessionToken, status,
   const playAgain = () => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
   const systemCrawlReplay = (replayMode: "new" | "same") => send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: { replayMode } });
   const backToArcade = () => send({ type: "host.backToArcade", requestId: crypto.randomUUID(), payload: {} });
+
+  if (game.gameId === "two-truths") return <section className="game-stage two-truths"><TwoTruthsScreen game={game} players={room.players} selfId={selfId} isHost={self?.isHost === true} roomCode={roomCode} sessionToken={sessionToken} disabled={status !== "connected" || commandPending} sendGame={sendGame} playAgain={playAgain} backToArcade={backToArcade} /></section>;
 
   if (game.gameId === "ghost-circuit") return <section className="game-stage ghost-circuit"><GhostCircuitScreen key={game.public.gameInstanceId} game={game} connected={status === "connected"} commandPending={commandPending} send={send} backToArcade={onBackToArcade ? () => { onBackToArcade(); return true; } : backToArcade} /></section>;
 

@@ -34,6 +34,15 @@ export default {
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
+  const deckMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/two-truths\/deck$/u);
+  if (deckMatch) {
+    const code = roomCodeSchema.safeParse(deckMatch[1]);
+    if (!code.success) return jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
+    if (request.method !== "POST") return jsonError("INVALID_COMMAND", "That action is not available.", 405);
+    const stub = env.ROOMS.get(env.ROOMS.idFromName(code.data));
+    return stub.fetch(new Request("https://room.internal/internal/two-truths/deck", request));
+  }
+
   const shirtFightMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/shirt-fight\/(drawings|assets\/([0-9a-f-]{36}))$/u);
   if (shirtFightMatch) {
     const parsedCode = roomCodeSchema.safeParse(shirtFightMatch[1]);

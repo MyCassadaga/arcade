@@ -51,6 +51,7 @@ export const GAME_CATALOG = [
     availability: "public"
   },
   { id: "star-garden", name: "Star Garden", description: "Arrange the stars. Discover constellations. Play solo or compete in the Cup.", duration: "5–10 min", playerRange: "1–8 players", icon: "stars", playMode: "single-player", availability: "public" },
+  { id: "two-truths", name: "Two Truths and a Lie", description: "A sealed survey. Three statements. Spot the lie and score.", duration: "10–15 min", playerRange: "7 players", icon: "truths", playMode: "room", availability: "public" },
   {
     id: "system-crawl",
     name: "System Crawl",

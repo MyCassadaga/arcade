@@ -90,3 +90,14 @@ async function requestSession(path: string, displayName: string): Promise<RoomSe
   }
   return response.json() as Promise<RoomSessionResponse>;
 }
+
+// Forward the prepared file without parsing/previewing its statements in the UI.
+export async function uploadTwoTruthsDeck(roomCode: string, sessionToken: string, identity: { gameInstanceId: string; phaseNonce: number }, file: Blob): Promise<void> {
+  if (file.size > 30_000) throw new Error("Prepared file too large.");
+  const envelope = JSON.stringify({ ...identity, requestId: crypto.randomUUID() });
+  const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/two-truths/deck`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${sessionToken}` },
+    body: new Blob([envelope.slice(0, -1), ',"deck":', file, '}'], { type: "application/json" })
+  });
+  if (!response.ok) throw new Error("Prepared game import failed.");
+}
