@@ -35,13 +35,13 @@ async function connect(session: RoomSessionResponse) {
   return { socket, messages, send, wait, view: () => [...messages].reverse().find((m) => m.type === "game.state") };
 }
 const deck = { version: 1, participants: Array.from({ length: 7 }, (_, i) => ({ displayName: i === 0 ? "Host" : `Guest ${i}`, truths: [`Private fixture ${i} A`, `Private fixture ${i} B`], lie: `Private fixture ${i} C`, lieSource: "generated" })) };
-async function open(preload = false) {
+async function open(preload = false, attendeeCount = 7) {
   const host = await create(), sessions = [host];
   const client = await connect(host);
   await client.send({ type: "host.selectGame", requestId: crypto.randomUUID(), payload: { gameId: "two-truths" } });
   await client.send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
   if (preload) expect((await upload(host, await payload(host))).status).toBe(200);
-  for (let i = 1; i < 7; i++) sessions.push(await (await call(`/api/rooms/${host.roomCode}/join`, { displayName: `Guest ${i}` })).json());
+  for (let i = 1; i < attendeeCount; i++) sessions.push(await (await call(`/api/rooms/${host.roomCode}/join`, { displayName: `Guest ${i}` })).json());
   const clients = [client, ...await Promise.all(sessions.slice(1).map(connect))];
   return { host, sessions, clients, client };
 }
@@ -75,7 +75,54 @@ describe("Two Truths DO import and scoring boundary", () => {
       expect(await client.send(cmd(state, "twoTruths.next"))).toMatchObject({ type: "command.ack" });
     }
     const final = await stored(host); expect(final.game.phase).toBe("gameResults");
-    for (let i = 0; i < sessions.length; i++) expect(final.scores.find(p => p.id === sessions[i]!.playerId)?.score).toBe(i < 5 ? 4 : 5);
+    for (let i = 0; i < sessions.length; i++) expect(final.scores.find(p => p.id === sessions[i]!.playerId)?.score).toBe(4);
+  });
+
+  it("skips absent respondents, atomically applies the initial penalty once across retries and eviction", async () => {
+    const { host, sessions, clients, client } = await open(false, 3);
+    const body = { ...await payload(host), deck: { ...deck, participants: [deck.participants[0]!, deck.participants[1]!, deck.participants[4]!] } };
+    expect((await upload(host, body)).status).toBe(200);
+    const initial = (await stored(host)).game;
+    const begin = cmd(initial, "twoTruths.begin", "attendance-begin");
+    expect(await clients[1]!.send(begin)).toMatchObject({ type: "error", payload: { code: "NOT_HOST" } });
+    expect(await client.send(begin)).toMatchObject({ type: "command.ack" });
+    const begun = await stored(host);
+    expect(begun.game.rounds).toHaveLength(2); expect(begun.game.playerIds).toHaveLength(3);
+    expect(begun.game.gameScores[sessions[2]!.playerId]).toBe(-1);
+    expect(begun.scores.find(p => p.id === sessions[2]!.playerId)?.score).toBe(-1);
+    expect(await client.send(begin)).toMatchObject({ type: "command.ack" });
+    expect(await client.send({ type: "game.command", requestId: begin.requestId, payload: { command: { type: "twoTruths.reveal", gameInstanceId: initial.gameInstanceId, phaseNonce: initial.phaseNonce } } })).toMatchObject({ type: "error", payload: { code: "INVALID_COMMAND" } });
+    expect((await stored(host)).scores).toEqual(begun.scores);
+    await evictDurableObject(stubFor(host));
+    const recovered = await connect(host);
+    expect(await recovered.send(begin)).toMatchObject({ type: "command.ack" });
+    expect((await stored(host)).scores).toEqual(begun.scores);
+    const round = begun.game.rounds[0]!;
+    for (const [i, session] of sessions.entries()) {
+      if (session.playerId === round.subjectPlayerId) continue;
+      const voter = i === 0 ? recovered : await connect(session);
+      expect(await voter.send({ type: "game.command", requestId: crypto.randomUUID(), payload: { command: { type: "twoTruths.submitGuess", gameInstanceId: begun.game.gameInstanceId, phaseNonce: begun.game.phaseNonce, option: round.lieOption } } })).toMatchObject({ type: "command.ack" });
+    }
+    expect((await stored(host)).game.phase).toBe("reveal");
+    expect((await stored(host)).scores.find(p => p.id === sessions[2]!.playerId)?.score).toBe(0);
+  });
+  it("rejects zero matching attendees without changing scores or setup", async () => {
+    const { host, client } = await open(false, 3);
+    const body = { ...await payload(host), deck: { ...deck, participants: [deck.participants[4]!] } };
+    expect((await upload(host, body)).status).toBe(200);
+    const before = await stored(host);
+    expect(await client.send(cmd(before.game, "twoTruths.begin"))).toMatchObject({ type: "error", payload: { code: "TOO_FEW_PLAYERS" } });
+    const after = await stored(host);
+    expect(after.game).toEqual(before.game); expect(after.scores).toEqual(before.scores);
+  });
+  it("begins a solo respondent game and requires explicit host reveal with no voters", async () => {
+    const { host, client } = await open(false, 1);
+    expect((await upload(host, await payload(host))).status).toBe(200);
+    expect(await client.send(cmd((await stored(host)).game, "twoTruths.begin"))).toMatchObject({ type: "command.ack" });
+    const begun = await stored(host); expect(begun.game.rounds).toHaveLength(1); expect(begun.game.phase).toBe("guessing");
+    expect(await client.send(cmd(begun.game, "twoTruths.reveal"))).toMatchObject({ type: "command.ack" });
+    expect(await client.send(cmd((await stored(host)).game, "twoTruths.next"))).toMatchObject({ type: "command.ack" });
+    const final = await stored(host); expect(final.game.phase).toBe("gameResults"); expect(final.scores[0]!.score).toBe(0);
   });
 
   it("prepares with only the host, admits six later seats, and freezes admission at Begin", async () => {

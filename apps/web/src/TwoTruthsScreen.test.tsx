@@ -13,7 +13,7 @@ function setup(overrides: Partial<View> = {}, disabled = false) {
   return { game, sendGame, props, ...rendered };
 }
 describe("Two Truths presentation boundary", () => {
-  it("separates five respondent matches from seven-player readiness and uses dynamic round labels", () => {
+  it("shows available rounds independently of connected attendee count and uses dynamic round labels", () => {
     const names = Array.from({ length: 7 }, (_, i) => `Player ${i}`);
     const { props, rerender } = setup();
     const players = names.map((displayName, i) => ({ id: String(i), displayName, connected: true, isHost: i === 0, score: 0 }));
@@ -21,12 +21,29 @@ describe("Two Truths presentation boundary", () => {
     rerender(<TwoTruthsScreen {...props} game={game} players={players} />);
     expect(screen.getByText(/5 responses loaded/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
-    expect(screen.getByText(/Players without a survey response can guess every round/)).toBeVisible();
+    expect(screen.getByText(/Players without a matching response start at −1/)).toBeVisible();
     rerender(<TwoTruthsScreen {...props} game={game} players={players.slice(0, 6)} />);
-    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
     rerender(<TwoTruthsScreen {...props} game={{ ...game, phase: "reveal", public: { ...game.public, roundNumber: 5, statements: ["Fixture A", "Fixture B", "Fixture C"], lieOption: 1 } }} players={players} />);
     expect(screen.getByText("Round 5 of 5 · Two Truths and a Lie")).toBeVisible();
     expect(screen.getByRole("button", { name: "See final standings" })).toBeVisible();
+  });
+
+  it("enables solo matching setup, skips absent names, explains no-match and avoids zero-max progress", () => {
+    const { props, rerender } = setup();
+    const game: View = { ...props.game, public: { ...props.game.public, loaded: true, totalRounds: 2, participantNames: ["Self", "Absent"] } };
+    const players = [{ id: "self", displayName: " SELF ", connected: true, isHost: true, score: 0 }];
+    rerender(<TwoTruthsScreen {...props} game={game} players={players} />);
+    expect(screen.getByText(/2 responses loaded · 1 player connected · 1 round available/)).toBeVisible();
+    expect(screen.getByText("Skipped if absent: Absent")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
+    rerender(<TwoTruthsScreen {...props} game={game} players={[]} />);
+    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeDisabled();
+    expect(screen.getByText(/No matching survey respondent/)).toBeVisible();
+    rerender(<TwoTruthsScreen {...props} game={{ ...game, phase: "guessing", public: { ...game.public, eligibleGuessCount: 0, subjectPlayerId: "self" } }} players={players} />);
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByText("No guesses are needed. The host can reveal this round.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reveal lie" })).toBeEnabled();
   });
 
   it.each([undefined, 1])("uses the authoritative locked selection after same-phase rerender (draft %s)", (draft) => {
