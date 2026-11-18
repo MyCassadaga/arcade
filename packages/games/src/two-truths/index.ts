@@ -1,6 +1,6 @@
 import { addScore, GameRuleError, rankings, shuffled } from "@team-arcade/game-core";
 import type { GameContext, GameResult } from "@team-arcade/game-core";
-import { twoTruthsDeckSchema, type TwoTruthsCommand, type TwoTruthsDeck, type TwoTruthsPublicView, type TwoTruthsPrivateView, type PlayerView } from "@team-arcade/shared";
+import { MAX_PLAYERS, twoTruthsDeckSchema, type TwoTruthsCommand, type TwoTruthsDeck, type TwoTruthsPublicView, type TwoTruthsPrivateView, type PlayerView } from "@team-arcade/shared";
 
 export interface TwoTruthsState {
   version: 1;
@@ -35,15 +35,20 @@ export function handleTwoTruthsCommand(state: TwoTruthsState, command: TwoTruths
     if (state.phase !== "setup" || !state.deck) throw new GameRuleError("INVALID_PHASE", "Load the prepared game file first.");
     const deck = state.deck;
     const connected = players.filter(p => p.connected);
-    const matched = deck.participants.map(row => connected.find(p => p.displayName.trim().toLowerCase() === row.displayName.toLowerCase()));
-    if (connected.length !== 7 || matched.some(p => !p) || new Set(matched.map(p => p?.id)).size !== deck.participants.length)
-      throw new GameRuleError("TOO_FEW_PLAYERS", "Seven players must be connected, including every survey respondent under their prepared-file name.");
+    const matched = deck.participants.flatMap(row => {
+      const player = connected.find(p => p.displayName.trim().toLowerCase() === row.displayName.toLowerCase());
+      return player ? [{ row, player }] : [];
+    });
+    if (connected.length < 1 || connected.length > MAX_PLAYERS || matched.length === 0 || new Set(matched.map(({ player }) => player.id)).size !== matched.length)
+      throw new GameRuleError("TOO_FEW_PLAYERS", "Connect 1–12 players, including at least one survey respondent under their prepared-file name.");
     const playerIds = connected.map(p => p.id);
-    const rounds = shuffled(deck.participants.map((row, index) => {
+    const respondents = new Set(matched.map(({ player }) => player.id));
+    const initialScores = Object.fromEntries(playerIds.map(id => [id, respondents.has(id) ? 0 : -1]));
+    const rounds = shuffled(matched.map(({ row, player }) => {
       const options = shuffled([...row.truths.map(text => ({ text, lie: false })), { text: row.lie, lie: true }], random);
-      return { subjectPlayerId: matched[index]!.id, statements: options.map(o => o.text), lieOption: options.findIndex(o => o.lie) };
+      return { subjectPlayerId: player.id, statements: options.map(o => o.text), lieOption: options.findIndex(o => o.lie) };
     }), random);
-    return { state: { ...state, phase: "guessing", phaseNonce: state.phaseNonce + 1, playerIds, rounds, gameScores: Object.fromEntries(playerIds.map(id => [id, 0])) } };
+    return { state: { ...state, phase: "guessing", phaseNonce: state.phaseNonce + 1, playerIds, rounds, gameScores: initialScores }, scoreDelta: initialScores };
   }
   if (command.type === "twoTruths.next") {
     if (state.phase !== "reveal") throw new GameRuleError("INVALID_PHASE", "Reveal this round first.");

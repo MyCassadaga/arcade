@@ -56,7 +56,7 @@ test(`sealed Two Truths: ${responseCount} respondents, seven players, mobile and
     }
     expect(subjects.size).toBe(responseCount);
     await reloadAtHeading(mobile, "Who spotted the lies?");
-    await expect(mobile.locator(".game-scoreboard b")).toHaveText(Array.from({ length: 7 }, (_, i) => `${i < responseCount ? responseCount - 1 : responseCount} pts`).sort((a, b) => Number.parseInt(b) - Number.parseInt(a)));
+    await expect(mobile.locator(".game-scoreboard b")).toHaveText(Array.from({ length: 7 }, () => `${responseCount - 1} pts`).sort((a, b) => Number.parseInt(b) - Number.parseInt(a)));
     await mobile.screenshot({ path: info.outputPath("results-mobile.png"), fullPage: true });
     await host.screenshot({ path: info.outputPath("results-desktop.png"), fullPage: true });
     await host.getByRole("button", { name: "Play again", exact: true }).click();
@@ -79,7 +79,7 @@ test("host seals the file before the other six players join", async ({ browser }
     const deck = { version: 1, participants: names.slice(0, 5).map((displayName, i) => ({ displayName, truths: [`Later fixture ${i} A`, `Later fixture ${i} B`], lie: `Later fixture ${i} C`, lieSource: "generated" })) };
     await host.getByLabel("Prepared game file (.json)").setInputFiles({ name: "sealed.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(deck)) });
     await expect(host.getByRole("heading", { name: "Game file sealed" })).toBeVisible();
-    await expect(host.getByRole("button", { name: "Begin blind game" })).toBeDisabled();
+    await expect(host.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
     const code = await host.locator(".room-banner h1").innerText();
     for (const name of names.slice(1)) {
       const context = await browser.newContext(); contexts.push(context);
@@ -97,3 +97,33 @@ test("host seals the file before the other six players join", async ({ browser }
     await expect(host.getByText("No points this time")).toBeVisible();
   } finally { await Promise.all(contexts.map(c => c.close())); }
 });
+
+for (const count of [1, 3]) {
+  test(`attendance ${count}: skips absent responses and reveals solo explicitly`, async ({ browser }) => {
+    const names = Array.from({ length: count }, (_, i) => `Attendee ${i}`);
+    const { contexts, pages } = await createRoomPlayers(browser, names);
+    const host = requiredPage(pages, 0);
+    try {
+      await host.getByRole("button", { name: /Two Truths and a Lie/ }).click();
+      await host.getByRole("button", { name: "Start game" }).click();
+      const deck = { version: 1, participants: [names[0]!, "Absent respondent"].map(displayName => ({ displayName, truths: ["Attendance fixture A", "Attendance fixture B"], lie: "Attendance fiction C", lieSource: "authored" })) };
+      await host.getByLabel("Prepared game file (.json)").setInputFiles({ name: "attendance.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(deck)) });
+      await expect(host.getByText(`2 responses loaded · ${count} ${count === 1 ? "player" : "players"} connected · 1 round available`)).toBeVisible();
+      await expect(host.getByText("Skipped if absent: Absent respondent")).toBeVisible();
+      await host.getByRole("button", { name: "Begin blind game" }).click();
+      await expect(host.locator(".phase-kicker")).toContainText("Round 1 of 1");
+      if (count === 1) {
+        await expect(host.getByText("No guesses are needed. The host can reveal this round.")).toBeVisible();
+        await host.getByRole("button", { name: "Reveal lie" }).click();
+      } else {
+        for (const page of pages.slice(1)) {
+          await page.locator(".tt-option").filter({ hasText: "Attendance fiction C" }).getByRole("radio").check();
+          await page.getByRole("button", { name: "Lock guess", exact: true }).click();
+        }
+      }
+      await expect(host.getByText("The lie is revealed.")).toBeVisible();
+      await host.getByRole("button", { name: "See final standings" }).click();
+      await expect(host.locator(".game-scoreboard b")).toHaveText(Array(count).fill("0 pts"));
+    } finally { await Promise.all(contexts.map(context => context.close())); }
+  });
+}

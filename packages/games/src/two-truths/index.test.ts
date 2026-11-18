@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTwoTruthsState, loadTwoTruthsDeck, handleTwoTruthsCommand, getTwoTruthsPublicView, getTwoTruthsPrivateView } from ".";
+import { type TwoTruthsState, createTwoTruthsState, loadTwoTruthsDeck, handleTwoTruthsCommand, getTwoTruthsPublicView, getTwoTruthsPrivateView } from ".";
 import { twoTruthsDeckSchema, twoTruthsCommandSchema, type PlayerView, type TwoTruthsDeck } from "@team-arcade/shared";
 const players: PlayerView[] = Array.from({ length: 7 }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`, displayName: `Player ${i}`, connected: true, isHost: i === 0, score: 0 }));
 const deck: TwoTruthsDeck = { version: 1, participants: players.map((p, i) => ({ displayName: p.displayName, truths: [`Fixture truth ${i} A`, `Fixture truth ${i} B`], lie: `Fixture fiction ${i}`, lieSource: i === 0 ? "authored" : "generated" })) };
@@ -27,19 +27,43 @@ describe("Two Truths sealed engine", () => {
       state = handleTwoTruthsCommand(state, { type: "twoTruths.next", gameInstanceId: instance, phaseNonce: state.phaseNonce }, host, true, players, () => 0).state;
     }
     expect(state.phase).toBe("gameResults");
-    for (const [index, player] of players.entries()) expect(state.gameScores[player.id]).toBe(index < count ? count - 1 : count);
+    for (const [index, player] of players.entries()) expect(state.gameScores[player.id]).toBe(index < count ? count - 1 : count - 1);
   });
-  it("rejects empty/eight respondent decks and missing respondent or six/eight connected seats before randomization", () => {
-    const create = () => createTwoTruthsState({ players, now: 0, random: () => 0 }, instance);
+  it("rejects empty/eight respondent decks and no connected matches before randomization", () => {
     expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: [] }).success).toBe(false);
     expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: [...deck.participants, { ...deck.participants[0]!, displayName: "Eighth respondent" }] }).success).toBe(false);
-    const five = { ...deck, participants: deck.participants.slice(0, 5) };
-    const state = loadTwoTruthsDeck(create(), five, instance, 0);
+    const state = make();
     const command = { type: "twoTruths.begin" as const, gameInstanceId: instance, phaseNonce: 1 };
     const noRandom = () => { throw Error("Must validate before RNG"); };
-    for (const roster of [players.slice(0, 6), [...players, { ...players[0]!, id: crypto.randomUUID(), displayName: "Extra" }], players.map((p, i) => i === 0 ? { ...p, displayName: "Unmatched" } : p)])
-      expect(() => handleTwoTruthsCommand(state, command, host, true, roster, noRandom)).toThrow(/Seven players/);
-    expect(state.playerIds).toEqual([]); expect(state.rounds).toEqual([]);
+    for (const roster of [[], players.map(p => ({ ...p, connected: false })), players.map(p => ({ ...p, displayName: "Unmatched" })), Array.from({ length: 13 }, (_, i) => ({ ...players[0]!, id: String(i) }))])
+      expect(() => handleTwoTruthsCommand(state, command, host, true, roster, noRandom)).toThrow(/at least one survey respondent/);
+    expect(state.playerIds).toEqual([]); expect(state.rounds).toEqual([]); expect(state.gameScores).toEqual({});
+  });
+  it.each([1, 2, 6, 8, 12])("freezes %s connected attendees, skips absent responses and applies signed initial scores once", count => {
+    const roster = Array.from({ length: count }, (_, i) => ({ ...players[i % 7]!, id: String(i), displayName: i === 0 ? "  PLAYER 0  " : `Extra ${i}` }));
+    const disconnected = { ...players[1]!, connected: false };
+    const result = handleTwoTruthsCommand(make(), { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, [...roster, disconnected], () => 0.5);
+    let state = result.state;
+    expect(state.playerIds).toEqual(roster.map(p => p.id));
+    expect(state.rounds).toHaveLength(1); expect(state.rounds[0]!.subjectPlayerId).toBe("0");
+    expect(result.scoreDelta).toEqual(Object.fromEntries(roster.map((p, i) => [p.id, i === 0 ? 0 : -1])));
+    expect(state.gameScores).toEqual(result.scoreDelta);
+    const identity = { gameInstanceId: instance, phaseNonce: state.phaseNonce };
+    expect(() => handleTwoTruthsCommand(state, { ...identity, type: "twoTruths.submitGuess", option: 0 }, disconnected.id, false, roster, () => 0)).toThrow();
+    for (const player of roster.slice(1)) state = handleTwoTruthsCommand(state, { ...identity, type: "twoTruths.submitGuess", option: state.rounds[0]!.lieOption }, player.id, false, [], () => 0).state;
+    if (count === 1) {
+      expect(state.phase).toBe("guessing"); expect(getTwoTruthsPublicView(state).eligibleGuessCount).toBe(0);
+      state = handleTwoTruthsCommand(state, { ...identity, type: "twoTruths.reveal" }, host, true, [], () => 0).state;
+    }
+    expect(state.phase).toBe("reveal"); expect(Object.values(state.gameScores)).toEqual(Array(count).fill(0));
+    expect(state.playerIds).toEqual(roster.map(p => p.id));
+  });
+  it("continues historical active v1 scores without applying a new penalty", () => {
+    let state = begin();
+    state = { ...state, rounds: state.rounds.slice(0, 5), gameScores: Object.fromEntries(state.playerIds.map(id => [id, 3])) };
+    const result = handleTwoTruthsCommand(JSON.parse(JSON.stringify(state)) as TwoTruthsState, { type: "twoTruths.reveal", gameInstanceId: instance, phaseNonce: state.phaseNonce }, host, true, [], () => 0);
+    expect(Object.values(result.state.gameScores)).toEqual(Array(7).fill(3));
+    expect(Object.values(result.scoreDelta!)).toEqual(Array(7).fill(0));
   });
 
   it("keeps setup sealed for host and every viewer, freezes roster only at begin", () => {
@@ -47,7 +71,7 @@ describe("Two Truths sealed engine", () => {
     expect(view.loaded).toBe(true); expect(view.participantNames).toHaveLength(7);
     expect(JSON.stringify(view)).not.toContain("Fixture");
     for (const p of players) expect(getTwoTruthsPrivateView(s, p.id)).toEqual({ canGuess: false, hasGuessed: false });
-    expect(() => handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, players.slice(0, 6), () => 0)).toThrow(/Seven/);
+    expect(handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, players.slice(0, 6), () => 0).state.playerIds).toHaveLength(6);
     expect(() => handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, players[1]!.id, false, players, () => 0)).toThrow(/host/);
     expect(() => loadTwoTruthsDeck(s, deck, instance, 1)).toThrow(/sealed/);
   });
@@ -94,8 +118,9 @@ describe("Two Truths sealed engine", () => {
     const escaped = structuredClone(deck); escaped.participants[0]!.lie = "\u0001".repeat(180);
     expect(twoTruthsDeckSchema.safeParse(escaped).success).toBe(false);
     const worst = structuredClone(deck); for (const row of worst.participants) { row.truths = ["界".repeat(180), "語".repeat(180)]; row.lie = "文".repeat(180); }
+    const twelve = [...players, ...Array.from({ length: 5 }, (_, i) => ({ ...players[0]!, id: crypto.randomUUID(), displayName: `Extra ${i}` }))];
     let s = loadTwoTruthsDeck(createTwoTruthsState({ players, now: 0, random: () => 0 }, instance), worst, instance, 0);
-    s = handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, players, () => 0).state;
+    s = handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, twelve, () => 0).state;
     s = handleTwoTruthsCommand(s, { type: "twoTruths.reveal", gameInstanceId: instance, phaseNonce: 2 }, host, true, players, () => 0).state;
     const envelope = { type: "game.state", payload: { gameId: "two-truths", phase: s.phase, public: getTwoTruthsPublicView(s), private: getTwoTruthsPrivateView(s, host) } };
     expect(new TextEncoder().encode(JSON.stringify(envelope)).byteLength).toBeLessThan(4096);
