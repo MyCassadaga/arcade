@@ -8,10 +8,10 @@ export const twoTruthsDeckSchema = z.object({
     truths: z.tuple([statement, statement]),
     lie: statement,
     lieSource: z.enum(["authored", "generated"])
-  }).strict()).length(7)
+  }).strict()).min(1).max(7)
 }).strict().superRefine((deck, ctx) => {
   const names = deck.participants.map(p => p.displayName.toLowerCase());
-  if (new Set(names).size !== 7) ctx.addIssue({ code: "custom", message: "Use seven distinct participants." });
+  if (new Set(names).size !== names.length) ctx.addIssue({ code: "custom", message: "Use distinct survey respondents." });
   for (const row of deck.participants) {
     if (new Set([...row.truths, row.lie].map(s => s.toLowerCase())).size !== 3)
       ctx.addIssue({ code: "custom", message: "Use three distinct statements per participant." });

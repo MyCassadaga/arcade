@@ -13,6 +13,22 @@ function setup(overrides: Partial<View> = {}, disabled = false) {
   return { game, sendGame, props, ...rendered };
 }
 describe("Two Truths presentation boundary", () => {
+  it("separates five respondent matches from seven-player readiness and uses dynamic round labels", () => {
+    const names = Array.from({ length: 7 }, (_, i) => `Player ${i}`);
+    const { props, rerender } = setup();
+    const players = names.map((displayName, i) => ({ id: String(i), displayName, connected: true, isHost: i === 0, score: 0 }));
+    const game: View = { ...props.game, public: { ...props.game.public, loaded: true, totalRounds: 5, participantNames: names.slice(0, 5) } };
+    rerender(<TwoTruthsScreen {...props} game={game} players={players} />);
+    expect(screen.getByText(/5 responses loaded/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
+    expect(screen.getByText(/Players without a survey response can guess every round/)).toBeVisible();
+    rerender(<TwoTruthsScreen {...props} game={game} players={players.slice(0, 6)} />);
+    expect(screen.getByRole("button", { name: "Begin blind game" })).toBeDisabled();
+    rerender(<TwoTruthsScreen {...props} game={{ ...game, phase: "reveal", public: { ...game.public, roundNumber: 5, statements: ["Fixture A", "Fixture B", "Fixture C"], lieOption: 1 } }} players={players} />);
+    expect(screen.getByText("Round 5 of 5 · Two Truths and a Lie")).toBeVisible();
+    expect(screen.getByRole("button", { name: "See final standings" })).toBeVisible();
+  });
+
   it.each([undefined, 1])("uses the authoritative locked selection after same-phase rerender (draft %s)", (draft) => {
     const publicView = { gameInstanceId: "00000000-0000-4000-8000-000000000000", phaseNonce: 2, loaded: true, participantNames: [], roundNumber: 1, totalRounds: 7, guessCount: 0, eligibleGuessCount: 6, gameScores: {}, subjectPlayerId: "other", statements: ["Fixture A", "Fixture B", "Fixture C"] };
     const { props, rerender } = setup({ phase: "guessing", public: publicView, private: { canGuess: true, hasGuessed: false } });

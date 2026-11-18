@@ -8,12 +8,46 @@ const host = players[0]!.id;
 const make = () => loadTwoTruthsDeck(createTwoTruthsState({ players, now: 0, random: () => 0.5 }, instance), deck, instance, 0);
 function begin() { const s = make(); return handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: s.phaseNonce }, host, true, players, () => 0.5).state; }
 describe("Two Truths sealed engine", () => {
+  it.each([1, 5, 7])("plays %s respondent rounds with all seven seats, including nonrespondents", count => {
+    const packet = { ...deck, participants: deck.participants.slice(0, count) };
+    let state = loadTwoTruthsDeck(createTwoTruthsState({ players, now: 0, random: () => 0.5 }, instance), packet, instance, 0);
+    expect(getTwoTruthsPublicView(state).totalRounds).toBe(count);
+    state = handleTwoTruthsCommand(state, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: state.phaseNonce }, host, true, players, () => 0.5).state;
+    expect(state.playerIds).toHaveLength(7); expect(state.rounds).toHaveLength(count);
+    for (let index = 0; index < count; index++) {
+      const round = state.rounds[state.roundIndex]!;
+      const identity = { gameInstanceId: instance, phaseNonce: state.phaseNonce };
+      expect(getTwoTruthsPublicView(state).eligibleGuessCount).toBe(6);
+      expect(getTwoTruthsPublicView(state).totalRounds).toBe(count);
+      for (const player of players.filter(p => p.id !== round.subjectPlayerId)) {
+        expect(getTwoTruthsPrivateView(state, player.id).canGuess).toBe(true);
+        state = handleTwoTruthsCommand(state, { ...identity, type: "twoTruths.submitGuess", option: round.lieOption }, player.id, false, players, () => 0).state;
+      }
+      expect(state.phase).toBe("reveal");
+      state = handleTwoTruthsCommand(state, { type: "twoTruths.next", gameInstanceId: instance, phaseNonce: state.phaseNonce }, host, true, players, () => 0).state;
+    }
+    expect(state.phase).toBe("gameResults");
+    for (const [index, player] of players.entries()) expect(state.gameScores[player.id]).toBe(index < count ? count - 1 : count);
+  });
+  it("rejects empty/eight respondent decks and missing respondent or six/eight connected seats before randomization", () => {
+    const create = () => createTwoTruthsState({ players, now: 0, random: () => 0 }, instance);
+    expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: [] }).success).toBe(false);
+    expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: [...deck.participants, { ...deck.participants[0]!, displayName: "Eighth respondent" }] }).success).toBe(false);
+    const five = { ...deck, participants: deck.participants.slice(0, 5) };
+    const state = loadTwoTruthsDeck(create(), five, instance, 0);
+    const command = { type: "twoTruths.begin" as const, gameInstanceId: instance, phaseNonce: 1 };
+    const noRandom = () => { throw Error("Must validate before RNG"); };
+    for (const roster of [players.slice(0, 6), [...players, { ...players[0]!, id: crypto.randomUUID(), displayName: "Extra" }], players.map((p, i) => i === 0 ? { ...p, displayName: "Unmatched" } : p)])
+      expect(() => handleTwoTruthsCommand(state, command, host, true, roster, noRandom)).toThrow(/Seven players/);
+    expect(state.playerIds).toEqual([]); expect(state.rounds).toEqual([]);
+  });
+
   it("keeps setup sealed for host and every viewer, freezes roster only at begin", () => {
     const s = make(); const view = getTwoTruthsPublicView(s);
     expect(view.loaded).toBe(true); expect(view.participantNames).toHaveLength(7);
     expect(JSON.stringify(view)).not.toContain("Fixture");
     for (const p of players) expect(getTwoTruthsPrivateView(s, p.id)).toEqual({ canGuess: false, hasGuessed: false });
-    expect(() => handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, players.slice(0, 6), () => 0)).toThrow(/seven/);
+    expect(() => handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, host, true, players.slice(0, 6), () => 0)).toThrow(/Seven/);
     expect(() => handleTwoTruthsCommand(s, { type: "twoTruths.begin", gameInstanceId: instance, phaseNonce: 1 }, players[1]!.id, false, players, () => 0)).toThrow(/host/);
     expect(() => loadTwoTruthsDeck(s, deck, instance, 1)).toThrow(/sealed/);
   });
@@ -54,7 +88,7 @@ describe("Two Truths sealed engine", () => {
     expect(twoTruthsCommandSchema.safeParse({ ...id, type: "twoTruths.submitGuess", option: 3 }).success).toBe(false);
   });
   it("validates private files and bounds worst-case UTF-8 viewer envelopes", () => {
-    expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: deck.participants.slice(1) }).success).toBe(false);
+    expect(twoTruthsDeckSchema.safeParse({ ...deck, participants: [] }).success).toBe(false);
     const invalid = structuredClone(deck); invalid.participants[1]!.displayName = invalid.participants[0]!.displayName;
     expect(twoTruthsDeckSchema.safeParse(invalid).success).toBe(false);
     const escaped = structuredClone(deck); escaped.participants[0]!.lie = "\u0001".repeat(180);

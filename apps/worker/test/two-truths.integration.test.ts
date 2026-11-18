@@ -54,6 +54,30 @@ async function upload(session: RoomSessionResponse, body: unknown, token = sessi
 }
 async function payload(host: RoomSessionResponse) { const s = (await stored(host)).game; return { gameInstanceId: s.gameInstanceId, phaseNonce: s.phaseNonce, requestId: crypto.randomUUID(), deck }; }
 describe("Two Truths DO import and scoring boundary", () => {
+  it("runs five respondent rounds while both nonrespondent seats reconnect, vote and score", async () => {
+    const { host, sessions, clients, client } = await open();
+    const body = { ...await payload(host), deck: { ...deck, participants: deck.participants.slice(0, 5) } };
+    expect((await upload(host, body)).status).toBe(200);
+    let state = (await stored(host)).game;
+    expect(await client.send(cmd(state, "twoTruths.begin"))).toMatchObject({ type: "command.ack" });
+    const nonrespondent = await connect(sessions[6]!);
+    for (let round = 0; round < 5; round++) {
+      state = (await stored(host)).game;
+      expect(state.playerIds).toHaveLength(7); expect(state.rounds).toHaveLength(5);
+      const current = state.rounds[state.roundIndex]!;
+      for (let i = 0; i < sessions.length; i++) {
+        if (sessions[i]!.playerId === current.subjectPlayerId) continue;
+        const voter = i === 6 ? nonrespondent : clients[i]!;
+        const message: ClientMessage = { type: "game.command", requestId: crypto.randomUUID(), payload: { command: { type: "twoTruths.submitGuess", gameInstanceId: state.gameInstanceId, phaseNonce: state.phaseNonce, option: current.lieOption } } };
+        expect(await voter.send(message)).toMatchObject({ type: "command.ack" });
+      }
+      state = (await stored(host)).game; expect(state.phase).toBe("reveal");
+      expect(await client.send(cmd(state, "twoTruths.next"))).toMatchObject({ type: "command.ack" });
+    }
+    const final = await stored(host); expect(final.game.phase).toBe("gameResults");
+    for (let i = 0; i < sessions.length; i++) expect(final.scores.find(p => p.id === sessions[i]!.playerId)?.score).toBe(i < 5 ? 4 : 5);
+  });
+
   it("prepares with only the host, admits six later seats, and freezes admission at Begin", async () => {
     const { host, client } = await open(true);
     const s = (await stored(host)).game; expect(s.deck).toEqual(deck);
@@ -107,7 +131,7 @@ describe("Two Truths DO import and scoring boundary", () => {
     const malformed = await upload(host, '{"secret text":'); expect(malformed.status).toBe(400); expect(await malformed.text()).not.toContain("secret text");
     expect((await upload(host, "x".repeat(33_000))).status).toBe(413);
     expect((await upload(host, { ...body, gameInstanceId: crypto.randomUUID() })).status).toBe(409);
-    expect((await upload(host, { ...body, deck: { ...deck, participants: deck.participants.slice(1) } })).status).toBe(400);
+    expect((await upload(host, { ...body, deck: { ...deck, participants: [] } })).status).toBe(400);
     expect((await stored(host)).game.deck).toBeNull();
     const responses = await Promise.all([upload(host, body), upload(host, { ...body, requestId: crypto.randomUUID() })]);
     expect(responses.map(r => r.status).sort()).toEqual([200, 409]);

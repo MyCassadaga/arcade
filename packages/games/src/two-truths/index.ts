@@ -36,19 +36,19 @@ export function handleTwoTruthsCommand(state: TwoTruthsState, command: TwoTruths
     const deck = state.deck;
     const connected = players.filter(p => p.connected);
     const matched = deck.participants.map(row => connected.find(p => p.displayName.trim().toLowerCase() === row.displayName.toLowerCase()));
-    if (connected.length !== 7 || matched.some(p => !p) || new Set(matched.map(p => p?.id)).size !== 7)
-      throw new GameRuleError("TOO_FEW_PLAYERS", "All seven survey participants must be connected using the names in the prepared file.");
-    const playerIds = matched.map(p => p!.id);
+    if (connected.length !== 7 || matched.some(p => !p) || new Set(matched.map(p => p?.id)).size !== deck.participants.length)
+      throw new GameRuleError("TOO_FEW_PLAYERS", "Seven players must be connected, including every survey respondent under their prepared-file name.");
+    const playerIds = connected.map(p => p.id);
     const rounds = shuffled(deck.participants.map((row, index) => {
       const options = shuffled([...row.truths.map(text => ({ text, lie: false })), { text: row.lie, lie: true }], random);
-      return { subjectPlayerId: playerIds[index]!, statements: options.map(o => o.text), lieOption: options.findIndex(o => o.lie) };
+      return { subjectPlayerId: matched[index]!.id, statements: options.map(o => o.text), lieOption: options.findIndex(o => o.lie) };
     }), random);
     return { state: { ...state, phase: "guessing", phaseNonce: state.phaseNonce + 1, playerIds, rounds, gameScores: Object.fromEntries(playerIds.map(id => [id, 0])) } };
   }
   if (command.type === "twoTruths.next") {
     if (state.phase !== "reveal") throw new GameRuleError("INVALID_PHASE", "Reveal this round first.");
-    return { state: { ...state, phase: state.roundIndex === 6 ? "gameResults" : "guessing", phaseNonce: state.phaseNonce + 1,
-      roundIndex: state.roundIndex === 6 ? state.roundIndex : state.roundIndex + 1, guesses: {}, pointsAwarded: {} } };
+    return { state: { ...state, phase: state.roundIndex === state.rounds.length - 1 ? "gameResults" : "guessing", phaseNonce: state.phaseNonce + 1,
+      roundIndex: state.roundIndex === state.rounds.length - 1 ? state.roundIndex : state.roundIndex + 1, guesses: {}, pointsAwarded: {} } };
   }
   if (state.phase !== "guessing") throw new GameRuleError("INVALID_PHASE", "Voting is closed.");
   const round = state.rounds[state.roundIndex]!;
@@ -57,7 +57,7 @@ export function handleTwoTruthsCommand(state: TwoTruthsState, command: TwoTruths
   if (Object.hasOwn(state.guesses, actor)) throw new GameRuleError("ALREADY_SUBMITTED", "Your guess is locked.");
   if (!Number.isInteger(command.option) || command.option < 0 || command.option > 2) throw new GameRuleError("INVALID_COMMAND", "Choose one of the three statements.");
   const next = { ...state, guesses: { ...state.guesses, [actor]: command.option } };
-  return Object.keys(next.guesses).length === 6 ? reveal(next) : { state: next };
+  return Object.keys(next.guesses).length === state.playerIds.length - 1 ? reveal(next) : { state: next };
 }
 function reveal(state: TwoTruthsState): GameResult<TwoTruthsState> {
   const round = state.rounds[state.roundIndex]!;
@@ -68,8 +68,8 @@ export function getTwoTruthsPublicView(state: TwoTruthsState): TwoTruthsPublicVi
   const round = state.rounds[state.roundIndex];
   return { gameInstanceId: state.gameInstanceId, phaseNonce: state.phaseNonce, loaded: state.deck !== null,
     participantNames: state.phase === "setup" ? state.deck?.participants.map(p => p.displayName) ?? [] : [],
-    roundNumber: state.phase === "setup" ? 0 : state.roundIndex + 1, totalRounds: 7,
-    guessCount: Object.keys(state.guesses).length, eligibleGuessCount: state.phase === "setup" ? 0 : 6, gameScores: { ...state.gameScores },
+    roundNumber: state.phase === "setup" ? 0 : state.roundIndex + 1, totalRounds: state.phase === "setup" ? state.deck?.participants.length ?? 0 : state.rounds.length,
+    guessCount: Object.keys(state.guesses).length, eligibleGuessCount: state.phase === "setup" ? 0 : state.playerIds.length - 1, gameScores: { ...state.gameScores },
     ...(round && state.phase !== "gameResults" ? { subjectPlayerId: round.subjectPlayerId, statements: [...round.statements] } : {}),
     ...(state.phase === "reveal" && round ? { lieOption: round.lieOption, pointsAwarded: { ...state.pointsAwarded } } : {}),
     ...(state.phase === "gameResults" ? { rankings: rankings(state.gameScores) } : {}) };
