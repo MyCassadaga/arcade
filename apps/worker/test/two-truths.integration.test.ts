@@ -35,20 +35,44 @@ async function connect(session: RoomSessionResponse) {
   return { socket, messages, send, wait, view: () => [...messages].reverse().find((m) => m.type === "game.state") };
 }
 const deck = { version: 1, participants: Array.from({ length: 7 }, (_, i) => ({ displayName: i === 0 ? "Host" : `Guest ${i}`, truths: [`Private fixture ${i} A`, `Private fixture ${i} B`], lie: `Private fixture ${i} C`, lieSource: "generated" })) };
-async function open() {
+async function open(preload = false) {
   const host = await create(), sessions = [host];
-  for (let i = 1; i < 7; i++) sessions.push(await (await call(`/api/rooms/${host.roomCode}/join`, { displayName: `Guest ${i}` })).json());
-  const clients = await Promise.all(sessions.map(connect)); const client = clients[0]!;
+  const client = await connect(host);
   await client.send({ type: "host.selectGame", requestId: crypto.randomUUID(), payload: { gameId: "two-truths" } });
   await client.send({ type: "host.startGame", requestId: crypto.randomUUID(), payload: {} });
+  if (preload) expect((await upload(host, await payload(host))).status).toBe(200);
+  for (let i = 1; i < 7; i++) sessions.push(await (await call(`/api/rooms/${host.roomCode}/join`, { displayName: `Guest ${i}` })).json());
+  const clients = [client, ...await Promise.all(sessions.slice(1).map(connect))];
   return { host, sessions, clients, client };
 }
 const cmd = (s: TwoTruthsState, type: "twoTruths.begin" | "twoTruths.reveal" | "twoTruths.next", requestId: string = crypto.randomUUID()): ClientMessage => ({ type: "game.command", requestId, payload: { command: { type, gameInstanceId: s.gameInstanceId, phaseNonce: s.phaseNonce } } });
 async function upload(session: RoomSessionResponse, body: unknown, token = session.sessionToken) {
-  return worker.fetch(new Request(`https://example.test/api/rooms/${session.roomCode}/two-truths/deck`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: typeof body === "string" ? body : JSON.stringify(body) }), testEnv);
+  const response = await worker.fetch(new Request(`https://example.test/api/rooms/${session.roomCode}/two-truths/deck`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: typeof body === "string" ? body : JSON.stringify(body) }), testEnv);
+  // Drain the forwarded HTTP body before test-only eviction. An unread proxy
+  // response otherwise retains an in-flight DO request in the test runtime.
+  return new Response(await response.arrayBuffer(), response);
 }
 async function payload(host: RoomSessionResponse) { const s = (await stored(host)).game; return { gameInstanceId: s.gameInstanceId, phaseNonce: s.phaseNonce, requestId: crypto.randomUUID(), deck }; }
 describe("Two Truths DO import and scoring boundary", () => {
+  it("prepares with only the host, admits six later seats, and freezes admission at Begin", async () => {
+    const { host, client } = await open(true);
+    const s = (await stored(host)).game; expect(s.deck).toEqual(deck);
+    expect((await call(`/api/rooms/${host.roomCode}/join`, { displayName: "Guest 1" })).status).toBe(409);
+    const [joining, begun] = await Promise.all([
+      call(`/api/rooms/${host.roomCode}/join`, { displayName: "Racing seat" }),
+      client.send(cmd(s, "twoTruths.begin"))
+    ]);
+    expect([201, 409]).toContain(joining.status); expect(begun).toMatchObject({ type: "command.ack" });
+    const frozen = (await stored(host)).game; expect(frozen.playerIds).toHaveLength(7); expect(frozen.phase).toBe("guessing");
+    expect((await call(`/api/rooms/${host.roomCode}/join`, { displayName: "Too late" })).status).toBe(409);
+    if (joining.status === 201) {
+      const session = await joining.json<RoomSessionResponse>(); const watcher = await connect(session);
+      const message = await watcher.wait(m => m.type === "game.state");
+      expect((message.payload as View).private.canGuess).toBe(false);
+      expect(frozen.playerIds).not.toContain(session.playerId);
+    }
+  });
+
   it("rechecks current host and expiry after delayed streamed body; rejects stale setup and wrong game", async () => {
     const { host, sessions, client } = await open(); const body = await payload(host);
     let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -124,8 +148,9 @@ describe("Two Truths DO import and scoring boundary", () => {
     expect(await client.send(cmd(initial, "twoTruths.reveal"))).toMatchObject({ type: "error", payload: { code: "STALE_PHASE" } });
     expect(await client.send({ type: "host.advance", requestId: crypto.randomUUID(), payload: {} })).toMatchObject({ type: "error" });
     expect((await stored(host)).scores).toEqual(scores);
-    for (const c of clients) c.socket.close(); await evictDurableObject(stubFor(host));
-    const recovered = await connect(host); expect((await stored(host)).game).toEqual(s);
+    await evictDurableObject(stubFor(host));
+    expect((await stored(host)).game).toEqual(s);
+    const recovered = await connect(host);
     expect(await recovered.send(cmd(s, "twoTruths.next"))).toMatchObject({ type: "command.ack" });
     expect((await stored(host)).game.roundIndex).toBe(1);
     expect((await stored(host)).scores).toEqual(scores);

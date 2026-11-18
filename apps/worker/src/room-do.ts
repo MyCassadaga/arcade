@@ -203,13 +203,19 @@ export class RoomDurableObject extends DurableObject<Env> {
     return Response.json({ ...newPlayer.session, roomCode } satisfies RoomSessionResponse, { status: 201 });
   }
 
+  private acceptsNewJoins(metadata: RoomMetadata): boolean {
+    if (metadata.roomPhase === "lobby") return true;
+    const game = this.readGame();
+    return metadata.roomPhase === "playing" && metadata.selectedGameId === "two-truths" && game?.gameId === "two-truths" && game.state.phase === "setup";
+  }
+
   private async join(request: Request): Promise<Response> {
     const metadata = await this.activeMetadata();
     if (metadata instanceof Response) return metadata;
 
     const { displayName } = await request.json<{ displayName: string }>();
     const players = this.readPlayers();
-    if (metadata.roomPhase !== "lobby") {
+    if (!this.acceptsNewJoins(metadata)) {
       return jsonError("INVALID_PHASE", "This game is already in progress. Join when the room returns to the arcade.", 409);
     }
     if (players.length >= MAX_PLAYERS) {
@@ -229,7 +235,7 @@ export class RoomDurableObject extends DurableObject<Env> {
         joinError = jsonError("ROOM_NOT_FOUND", "Room no longer exists.", 404);
         return;
       }
-      if (currentMetadata.roomPhase !== "lobby") {
+      if (!this.acceptsNewJoins(currentMetadata)) {
         joinError = jsonError("INVALID_PHASE", "This game is already in progress. Join when the room returns to the arcade.", 409);
         return;
       }

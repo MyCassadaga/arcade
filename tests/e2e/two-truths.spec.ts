@@ -65,3 +65,32 @@ test("sealed Two Truths: opaque import, seven rounds, mobile, reconnect and resu
     await expect(host.getByRole("heading", { name: "Choose a game" })).toBeVisible();
   } finally { await Promise.all(contexts.map(c => c.close())); }
 });
+
+test("host seals the file before the other six players join", async ({ browser }) => {
+  const names = Array.from({ length: 7 }, (_, i) => `Later Player ${i}`);
+  const { contexts, pages } = await createRoomPlayers(browser, [names[0]!]);
+  const host = requiredPage(pages, 0);
+  try {
+    await host.getByRole("button", { name: /Two Truths and a Lie/ }).click();
+    await host.getByRole("button", { name: "Start game" }).click();
+    const deck = { version: 1, participants: names.map((displayName, i) => ({ displayName, truths: [`Later fixture ${i} A`, `Later fixture ${i} B`], lie: `Later fixture ${i} C`, lieSource: "generated" })) };
+    await host.getByLabel("Prepared game file (.json)").setInputFiles({ name: "sealed.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(deck)) });
+    await expect(host.getByRole("heading", { name: "Game file sealed" })).toBeVisible();
+    await expect(host.getByRole("button", { name: "Begin blind game" })).toBeDisabled();
+    const code = await host.locator(".room-banner h1").innerText();
+    for (const name of names.slice(1)) {
+      const context = await browser.newContext(); contexts.push(context);
+      const page = await context.newPage(); pages.push(page);
+      await page.goto(`/?room=${code}`); await page.getByLabel("Display name").fill(name);
+      await page.getByRole("button", { name: "Join the fun" }).click();
+      await expect(page.getByRole("heading", { name: "Keep it sealed" })).toBeVisible();
+      await expect(page.locator(".two-truths")).not.toContainText("Later fixture");
+    }
+    await expect(host.getByRole("button", { name: "Begin blind game" })).toBeEnabled();
+    await host.getByRole("button", { name: "Begin blind game" }).click();
+    await expect(host.locator(".phase-kicker")).toContainText("Round 1 of 7");
+    await host.getByRole("button", { name: "Close voting and reveal (6 missing)" }).click();
+    await expect(host.getByText("The lie is revealed.")).toBeVisible();
+    await expect(host.getByText("No points this time")).toBeVisible();
+  } finally { await Promise.all(contexts.map(c => c.close())); }
+});

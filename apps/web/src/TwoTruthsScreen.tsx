@@ -18,6 +18,7 @@ export function TwoTruthsScreen(props: Props) {
 function TwoTruthsPhase({ game, players, selfId, isHost, roomCode, sessionToken, disabled, sendGame, playAgain, backToArcade }: Props) {
   const view = game.public;
   const [selection, setSelection] = useState<number | undefined>(game.private.selection);
+  const displayedSelection = game.private.selection ?? selection;
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const identity = { gameInstanceId: view.gameInstanceId, phaseNonce: view.phaseNonce };
@@ -55,10 +56,10 @@ function TwoTruthsPhase({ game, players, selfId, isHost, roomCode, sessionToken,
     <p>{revealed ? "The lie is revealed." : "Two are true. Which one is the lie?"}</p>
     <fieldset className="tt-options" disabled={disabled || locked || revealed || !game.private.canGuess}>
       <legend className="sr-only">Choose the lie</legend>
-      {view.statements?.map((text, index) => <label className={`tt-option ${selection === index ? "tt-selected" : ""} ${revealed ? index === view.lieOption ? "tt-lie" : "tt-truth" : ""}`} key={index}>
-        <input type="radio" name="lie-choice" value={index} checked={selection === index} onChange={() => setSelection(index)} />
+      {view.statements?.map((text, index) => <label className={`tt-option ${displayedSelection === index ? "tt-selected" : ""} ${revealed ? index === view.lieOption ? "tt-lie" : "tt-truth" : ""}`} key={index}>
+        <input type="radio" name="lie-choice" value={index} checked={displayedSelection === index} onChange={() => setSelection(index)} />
         <span className="tt-letter">{"ABC"[index]}</span><span className="tt-statement">{text}</span>
-        <strong>{revealed ? index === view.lieOption ? "✕ Lie" : "✓ Truth" : selection === index ? "Selected" : ""}</strong>
+        <strong>{revealed ? index === view.lieOption ? "✕ Lie" : "✓ Truth" : displayedSelection === index ? "Selected" : ""}</strong>
       </label>)}
     </fieldset>
     {revealed ? <>

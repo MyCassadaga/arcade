@@ -8,10 +8,22 @@ type View = Extract<TypedGameViewerState, { gameId: "two-truths" }>;
 function setup(overrides: Partial<View> = {}, disabled = false) {
   const game: View = { gameId: "two-truths", phase: "setup", public: { gameInstanceId: "00000000-0000-4000-8000-000000000000", phaseNonce: 0, loaded: false, participantNames: [], roundNumber: 0, totalRounds: 7, guessCount: 0, eligibleGuessCount: 6, gameScores: {} }, private: { canGuess: false, hasGuessed: false }, ...overrides };
   const sendGame = vi.fn(() => true);
-  render(<TwoTruthsScreen game={game} players={[]} selfId="self" isHost roomCode="ABCD" sessionToken="fixture-only" disabled={disabled} sendGame={sendGame} playAgain={() => true} backToArcade={() => true} />);
-  return { game, sendGame };
+  const props = { game, players: [], selfId: "self", isHost: true, roomCode: "ABCD", sessionToken: "fixture-only", disabled, sendGame, playAgain: () => true, backToArcade: () => true };
+  const rendered = render(<TwoTruthsScreen game={game} players={[]} selfId="self" isHost roomCode="ABCD" sessionToken="fixture-only" disabled={disabled} sendGame={sendGame} playAgain={() => true} backToArcade={() => true} />);
+  return { game, sendGame, props, ...rendered };
 }
 describe("Two Truths presentation boundary", () => {
+  it.each([undefined, 1])("uses the authoritative locked selection after same-phase rerender (draft %s)", (draft) => {
+    const publicView = { gameInstanceId: "00000000-0000-4000-8000-000000000000", phaseNonce: 2, loaded: true, participantNames: [], roundNumber: 1, totalRounds: 7, guessCount: 0, eligibleGuessCount: 6, gameScores: {}, subjectPlayerId: "other", statements: ["Fixture A", "Fixture B", "Fixture C"] };
+    const { props, rerender } = setup({ phase: "guessing", public: publicView, private: { canGuess: true, hasGuessed: false } });
+    if (draft !== undefined) fireEvent.click(screen.getAllByRole("radio")[draft]!);
+    rerender(<TwoTruthsScreen {...props} game={{ ...props.game, private: { canGuess: true, hasGuessed: true, selection: 0 } }} />);
+    expect(screen.getAllByRole("radio")[0]).toBeChecked();
+    expect(screen.getAllByRole("radio")[1]).not.toBeChecked();
+    expect(screen.getByText("Guess locked. Waiting for the reveal.")).toBeVisible();
+    expect(screen.getAllByRole("radio")[0]).toBeDisabled();
+  });
+
   it("forwards an opaque prepared file and never renders content or raw upload errors", async () => {
     vi.mocked(uploadTwoTruthsDeck).mockRejectedValueOnce(new Error("SPOILER-IN-ERROR"));
     setup();
