@@ -2,6 +2,7 @@ import { ghostCircuitExecuteSchema, ghostCircuitSelectSchema, type GhostCircuitP
 import { starGardenCommandSchema } from "./star-garden";
 import type { StarGardenPhase, StarGardenPublicView, StarGardenPrivateView } from "./star-garden";
 import { z } from "zod";
+import { twoTruthsCommandSchema, type TwoTruthsPublicView, type TwoTruthsPrivateView } from "./two-truths";
 import { GAME_IDS } from "./catalog";
 
 export const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{4,6}$/;
@@ -222,6 +223,7 @@ export const shirtFightCommandSchema = z.discriminatedUnion("type", [
 export type ShirtFightCommand = z.infer<typeof shirtFightCommandSchema>;
 
 export const gameCommandSchema = z.union([
+  twoTruthsCommandSchema,
   ghostCircuitExecuteSchema,
   ghostCircuitSelectSchema,
   starGardenCommandSchema,
@@ -290,7 +292,7 @@ export interface RoomView {
 }
 
 export interface GameViewerState {
-  gameId: "ghost-circuit" | "star-garden" | "who-said-that" | "impostor" | "categories" | "afterprint" | "shirt-fight" | "system-crawl";
+  gameId: "two-truths" | "ghost-circuit" | "star-garden" | "who-said-that" | "impostor" | "categories" | "afterprint" | "shirt-fight" | "system-crawl";
   phase: string;
   public: unknown;
   private?: unknown;
@@ -455,6 +457,7 @@ export interface ShirtFightPrivateView {
 }
 
 export type TypedGameViewerState =
+  | { gameId: "two-truths"; phase: "setup" | "guessing" | "reveal" | "gameResults"; public: TwoTruthsPublicView; private: TwoTruthsPrivateView }
   | { gameId: "ghost-circuit"; phase: "playing"; public: GhostCircuitPublicView; private: { canExecute: boolean } }
   | { gameId: "star-garden"; phase: StarGardenPhase; public: StarGardenPublicView; private: StarGardenPrivateView }
   | { gameId: "afterprint"; phase: "playing" | "gameResults"; public: AfterprintPublicView; private: AfterprintPrivateView }

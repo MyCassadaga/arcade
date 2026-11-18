@@ -1,0 +1,23 @@
+.two-truths { width: 100%; max-width: 1080px; margin-inline: auto; }
+.two-truths .phase-card { width: 100%; }
+.tt-seal { position: relative; font-size: 100px; line-height: 1.2; color: var(--purple, #4c2375); text-align: center; }
+.tt-seal span { position: absolute; inset: 45% 0 auto; font-size: 18px; font-weight: 900; }
+.tt-import { display: grid; gap: 12px; padding: 24px; border: 2px dashed currentColor; border-radius: 16px; margin-block: 20px; }
+.tt-import input { max-width: 100%; min-height: 44px; }
+.tt-roster { display: flex; flex-wrap: wrap; gap: 12px; padding: 0; list-style: none; }
+.tt-roster li { padding: 8px 12px; border: 1px solid currentColor; border-radius: 12px; }
+.tt-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 24px 0; border: 0; }
+.tt-option { display: flex; flex-direction: column; gap: 14px; align-items: start; padding: 22px; background: #fffaf0; color: #27153c; border: 3px solid #27153c; border-radius: 20px; box-shadow: 5px 5px 0 #27153c; cursor: pointer; min-height: 230px; overflow-wrap: anywhere; text-align: left; }
+.tt-option input { width: 22px; height: 22px; accent-color: #7139b5; }
+.tt-option:focus-within { outline: 4px solid #7139b5; outline-offset: 4px; }
+.tt-letter { font-size: 24px; font-weight: 900; }
+.tt-statement { font-size: 18px; line-height: 1.5; flex: 1; }
+.tt-selected { border-color: #7139b5; background: #f0e5ff; }
+.tt-lie { background: #ffdeef; }
+.tt-truth { background: #ebf6c1; }
+.tt-note { font-size: 14px; }
+.tt-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.two-truths button { min-height: 44px; margin-block: 8px; }
+@media (max-width: 700px) { .tt-options { grid-template-columns: 1fr; } .tt-option { min-height: 150px; padding: 18px; gap: 8px; } }
+
+@media (max-width: 900px) { .two-truths-layout > .two-truths { grid-row: 1; } .two-truths-layout > .players-panel { grid-row: auto; } }

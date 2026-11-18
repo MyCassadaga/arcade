@@ -1,0 +1,21 @@
+# Candidate evidence and continuation
+
+Contract/design: [DESIGN](DESIGN.md), private later-loading handoff: [PRIVATE_IMPORT](PRIVATE_IMPORT.md). No real survey or deck exists yet. All tests use synthetic participants/statements. Original private intent is not exported to this public repository.
+
+## Evidence index
+
+Environment: Node 22.22.2, repository lockfile unchanged, isolated feature worktree on the connected Mac. Baseline `71962b7306bbba1ef5bc3410c533c83c2974b483`. Commands below exercised the implementation tree committed with this record on 2026-11-18. No provider/live database actions.
+
+- AC-1/2/3/4: `npm run test:unit -- packages/games/src/two-truths/index.test.ts apps/web/src/TwoTruthsScreen.test.tsx`: 7 tests passed. Seven distinct subjects/six opportunities, immutable selections, +1 correctness, missing-vote closure, sealed projections, malformed files, stale identity/nonce, host/subject/outsider rejection, UTF-8/JSON encoding bound, opaque upload and generic errors, disabled import.
+- AC-2/4: `npm run test:worker -- apps/worker/test/two-truths.integration.test.ts`: 3 integration tests passed. Invalid/missing auth, non-host, malformed/oversize, upload race and receipt hash-only storage, stale instance, wrong game, streamed-body host change, expiry, conflicting payload retries, final-vote/host-close race, score persistence, eviction and next round, generic advance rejection. One earlier run timed out in the eviction/race test; unchanged targeted rerun passed in 279ms. Retain this observation rather than claiming the earlier run passed.
+- AC-1/2/3/4 + visual: `npx playwright test tests/e2e/two-truths.spec.ts --project chromium`: passed the complete synthetic seven-round game, file import without preview, subject exclusion, selected/locked reload recovery, six-point tied final results, fresh empty replay and arcade return. Desktop 1440×900, phone 390×844 and 320px overflow assertion. Chromium needed the authorized local sandbox escape because native launch was denied in sandbox. No production access.
+- Runtime captures under `test-results/two-truths-sealed-Two-Trut-af4c5-obile-reconnect-and-results-chromium/`: setup, guessing, reveal and results at desktop/mobile. Actual captures opened: equal pre-reveal cards, large subject heading, selection/focus, explicit Truth/Lie labels, readable mobile stack, game-before-roster layout, no horizontal overflow. No prior owner-approved art reference exists; this verifies the designer-selected Arcade-native layout, not visual approval against a nonexistent image.
+- `npm run typecheck`, `npm run lint`, `npm run build`, `npm run deploy:dry-run`, `git diff --check`: passed on the candidate footprint. Worker build is itself a Wrangler dry-run; no deployment occurred. One redundant explicit dry-run verified the documented command separately.
+
+Invalidation: rendering/client/access changes invalidate affected browser captures; engine/protocol/DO changes invalidate relevant unit/integration evidence; dependency/build changes invalidate appropriate build evidence. Documentation-only changes preserve runtime observations. The final byte cap affects only rejection of unusually escaped statements and is covered by focused tests; ordinary fixture rendering/captures remain applicable.
+
+## Remaining gates
+
+Independent Astra-high read-only review and current-candidate required CI are required before readiness. Actual spreadsheet preparation/import acceptance awaits the user's unopened file. No merge or deployment is authorized. GitHub tracker posting of private original intent was blocked by safety review; no private content may be exported. A sanitized public issue/PR requires verified publication scope. No issue or PR is claimed here.
+
+Run cost: one designer dispatch plus one bounded amendment, sole implementation owner, independent reviewer pending. Explicit accepted model/effort dispatch recorded in DESIGN; execution/token/cost telemetry unmeasured. Browser reruns corrected a concrete responsive layout defect and recaptured changed UI. Full local suite initially found the expected explicit catalog assertion needed the new public game; it was updated without weakening the public-only/single-player assertions. Full local suite is rerun for that concrete failure because no PR/CI exists yet and shared registry/protocol boundaries changed.

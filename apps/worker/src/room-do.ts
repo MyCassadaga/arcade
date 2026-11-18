@@ -15,6 +15,8 @@ import {
   type SystemCrawlState
 } from "@team-arcade/games";
 import { GAME_REGISTRY, bindGame, isRegisteredGame, type StoredPartyGame } from "./game-registry";
+import { twoTruthsImportSchema } from "@team-arcade/shared";
+import { loadTwoTruthsDeck } from "@team-arcade/games";
 import { readThenRevalidate } from "./post-io-authorization";
 import {
   MAX_PLAYERS,
@@ -148,6 +150,7 @@ export class RoomDurableObject extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    if (request.method === "POST" && url.pathname === "/internal/two-truths/deck") return this.receiveTwoTruthsDeck(request);
     if (request.method === "POST" && url.pathname === "/internal/create") {
       return this.create(request);
     }
@@ -256,6 +259,47 @@ export class RoomDurableObject extends DurableObject<Env> {
     return player
       ? Response.json({ valid: true })
       : jsonError("INVALID_SESSION", "Your room session is no longer valid.", 401);
+  }
+
+  private async receiveTwoTruthsDeck(request: Request): Promise<Response> {
+    if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return jsonError("INVALID_COMMAND", "Use a prepared JSON game file.", 415);
+    const bytes = await readBoundedBytes(request, 32_768);
+    if (!bytes) return jsonError("INVALID_COMMAND", "The prepared file is too large or incomplete.", 413);
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const authenticated = await this.authenticateHttp(request);
+      if (authenticated instanceof Response) return authenticated;
+      let body: unknown;
+      try { body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+      catch { return jsonError("INVALID_COMMAND", "The prepared game file is invalid. Ask the preparer to check it privately.", 400); }
+      const parsed = twoTruthsImportSchema.safeParse(body);
+      if (!parsed.success) return jsonError("INVALID_COMMAND", "The prepared game file is invalid. Ask the preparer to check it privately.", 400);
+      const digest = await hashSessionToken(new TextDecoder().decode(bytes));
+      const metadata = await this.activeMetadata();
+      if (metadata instanceof Response) return metadata;
+      // Re-read authority and instance after every asynchronous operation above.
+      const actor = this.readPlayers().find(p => p.id === authenticated.id);
+      if (!actor?.isHost) return jsonError("NOT_HOST", "Only the current host can load a prepared game.", 403);
+      const game = this.readGame();
+      if (metadata.roomPhase !== "playing" || game?.gameId !== "two-truths") return jsonError("INVALID_PHASE", "Open Two Truths setup first.", 409);
+      if (game.state.gameInstanceId !== parsed.data.gameInstanceId) return jsonError("STALE_PHASE", "That file upload belongs to an earlier setup.", 409);
+      const payload = `import:${digest}`;
+      const receipt = this.readTwoTruthsReceipts().find(r => r.playerId === actor.id && r.requestId === parsed.data.requestId);
+      if (receipt) {
+        if (receipt.payload !== payload) return jsonError("INVALID_COMMAND", "A request ID cannot be reused with different data.", 409);
+        return Response.json({ accepted: true }, { headers: { "cache-control": "no-store" } });
+      }
+      if (this.wasProcessed(actor.id, parsed.data.requestId)) return jsonError("INVALID_COMMAND", "That request ID was already used.", 409);
+      try {
+        const next = loadTwoTruthsDeck(game.state, parsed.data.deck, parsed.data.gameInstanceId, parsed.data.phaseNonce);
+        this.persistGameMutation({ ...metadata, lastActivityAt: Date.now() }, { gameId: "two-truths", state: next }, {}, actor.id, parsed.data.requestId, undefined, undefined, payload);
+      } catch (error) {
+        if (error instanceof GameRuleError) return jsonError(error.code, error.message, 409);
+        throw error;
+      }
+      this.broadcastGameState();
+      await this.scheduleAlarm();
+      return Response.json({ accepted: true }, { headers: { "cache-control": "no-store" } });
+    });
   }
 
   private async receiveShirtFightDrawing(request: Request): Promise<Response> {
@@ -591,6 +635,14 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
+    const twoTruthsReceipt = this.readTwoTruthsReceipts().find(r => r.playerId === playerId && r.requestId === message.requestId);
+    const isTwoTruthsCommand = message.type === "game.command" && message.payload.command.type.startsWith("twoTruths.");
+    if (twoTruthsReceipt) {
+      if (twoTruthsReceipt.payload !== JSON.stringify(message)) throw new GameRuleError("INVALID_COMMAND", "A request ID cannot be reused with a different payload.");
+      this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
+      this.sendGameState(socket, playerId);
+      return;
+    }
     const ghostReceipt = this.readGhostReceipts().find(r => r.playerId === playerId && r.requestId === message.requestId);
     const isGhostCommand = message.type === "game.command" && message.payload.command.type.startsWith("ghostCircuit.");
     if (ghostReceipt) {
@@ -608,7 +660,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
     if (this.wasProcessed(playerId, message.requestId)) {
-      if (isStarCommand || isGhostCommand) throw new GameRuleError("INVALID_COMMAND", "That request ID was already used.");
+      if (isStarCommand || isGhostCommand || isTwoTruthsCommand) throw new GameRuleError("INVALID_COMMAND", "That request ID was already used.");
       this.send(socket, { type: "command.ack", requestId: message.requestId, payload: { accepted: true } });
       return;
     }
@@ -760,7 +812,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     let nextGame: StoredGame;
     let scoreDelta: Readonly<Record<string, number>> = {};
     if (game.gameId !== "system-crawl") {
-      const result = bindGame(game).command(command, playerId, Date.now(), secureRandom, this.readPlayers().some((p) => p.id === playerId && p.isHost));
+      const result = bindGame(game).command(command, playerId, Date.now(), secureRandom, this.readPlayers().some((p) => p.id === playerId && p.isHost), this.readPlayers());
       nextGame = result.state;
       scoreDelta = result.scoreDelta ?? {};
     } else {
@@ -787,7 +839,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       playerId,
       requestId,
       game.gameId === "star-garden" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined,
-      game.gameId === "ghost-circuit" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined
+      game.gameId === "ghost-circuit" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined,
+      game.gameId === "two-truths" ? JSON.stringify({ type: "game.command", requestId, payload: { command } }) : undefined
     );
     this.send(socket, { type: "command.ack", requestId, payload: { accepted: true } });
     this.broadcast({ type: "room.presence", payload: this.roomView() });
@@ -932,6 +985,11 @@ export class RoomDurableObject extends DurableObject<Env> {
     this.writeAssetManifest({ entries: manifest.entries.map((entry) => entry.drawingId === drawingId ? update(entry) : entry) });
   }
 
+  private readTwoTruthsReceipts(): Array<{ playerId: string; requestId: string; payload: string }> {
+    const row = [...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'two-truths-receipts'")][0] as { json_value: string } | undefined;
+    return row ? JSON.parse(row.json_value) as Array<{ playerId: string; requestId: string; payload: string }> : [];
+  }
+
   private readGhostReceipts(): Array<{ playerId: string; requestId: string; payload: string }> {
     const row = ([...this.sql.exec("SELECT json_value FROM room_state WHERE key = 'ghost-circuit-receipts'")] as unknown as StateRow[])[0];
     return row ? JSON.parse(row.json_value) as Array<{ playerId: string; requestId: string; payload: string }> : [];
@@ -1043,7 +1101,8 @@ export class RoomDurableObject extends DurableObject<Env> {
     actorPlayerId?: string,
     requestId?: string,
     starGardenPayload?: string,
-    ghostPayload?: string
+    ghostPayload?: string,
+    twoTruthsPayload?: string
   ): void {
     this.ctx.storage.transactionSync(() => {
       this.writeMetadata(metadata);
@@ -1056,6 +1115,10 @@ export class RoomDurableObject extends DurableObject<Env> {
       }
       if (actorPlayerId !== undefined && requestId !== undefined) {
         this.markProcessed(actorPlayerId, requestId);
+        if (twoTruthsPayload !== undefined) {
+          const receipts = [...this.readTwoTruthsReceipts(), { playerId: actorPlayerId, requestId, payload: twoTruthsPayload }].slice(-64);
+          this.sql.exec("INSERT INTO room_state (key, json_value, updated_at) VALUES ('two-truths-receipts', ?, ?) ON CONFLICT(key) DO UPDATE SET json_value = excluded.json_value, updated_at = excluded.updated_at", JSON.stringify(receipts), Date.now());
+        }
         if (ghostPayload !== undefined) {
           const receipts = [...this.readGhostReceipts().filter(r => r.playerId !== actorPlayerId), ...this.readGhostReceipts().filter(r => r.playerId === actorPlayerId).slice(-(RECENT_REQUEST_LIMIT - 1)), { playerId: actorPlayerId, requestId, payload: ghostPayload }];
           this.sql.exec("INSERT INTO room_state (key, json_value, updated_at) VALUES ('ghost-circuit-receipts', ?, ?) ON CONFLICT(key) DO UPDATE SET json_value = excluded.json_value, updated_at = excluded.updated_at", JSON.stringify(receipts), Date.now());

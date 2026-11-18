@@ -322,7 +322,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
         </div>
       )}
 
-      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""} ${game?.gameId === "star-garden" ? "star-garden-layout" : ""}`}>
+      <div className={`lobby-layout ${game ? "game-layout" : ""} ${game?.gameId === "system-crawl" ? "system-crawl-layout" : ""} ${game?.gameId === "afterprint" ? "afterprint-layout" : ""} ${game?.gameId === "star-garden" ? "star-garden-layout" : ""} ${game?.gameId === "two-truths" ? "two-truths-layout" : ""}`}>
         {game && room ? <GameScreen game={game} room={room} selfId={session.playerId} roomCode={session.roomCode} sessionToken={session.sessionToken} status={status} commandPending={commandPending} send={send} recordActivity={recordActivity} onBackToArcade={soloGameId ? leave : undefined} /> : soloGameId ? <SoloLaunchScreen gameId={soloGameId} status={status} message={message} onCancel={leave} /> : <section className="arcade-section" aria-labelledby="choose-game-title">
           <div className="section-heading">
             <div><p className="eyebrow">Pick the next adventure</p><h2 id="choose-game-title">Choose a game</h2></div>
@@ -340,7 +340,7 @@ export function Lobby({ session, soloGameId, onLeave }: {
                   disabled={!self?.isHost || status !== "connected" || commandPending}
                   onClick={() => selectGame(game.id)}
                 >
-                  <span className="game-icon" aria-hidden="true">{game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : game.icon === "afterprint" ? "▦" : game.icon === "shirt" ? "T" : "⌁"}</span>
+                  <span className="game-icon" aria-hidden="true">{game.icon === "truths" ? "2+1" : game.icon === "speech" ? "?!" : game.icon === "terminal" ? ">_" : game.icon === "categories" ? "≠" : game.icon === "afterprint" ? "▦" : game.icon === "shirt" ? "T" : "⌁"}</span>
                   <span className="game-title">{game.name}</span>
                   <span className="game-description">{game.description}</span>
                   <span className="game-meta"><span>{game.duration}</span><span>{game.playerRange}</span></span>
